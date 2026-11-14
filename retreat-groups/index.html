@@ -848,7 +848,7 @@ function init() {
       } else {
         const buf = await f.arrayBuffer();
         text = new TextDecoder('utf-8').decode(buf);
-        if (text.includes('�')) { try { text = new TextDecoder('euc-kr').decode(buf); } catch (er) {} }
+        if (text.includes('\uFFFD')) { try { text = new TextDecoder('euc-kr').decode(buf); } catch (er) {} }
       }
       state.roster = text.trim(); state.isSample = false; syncForm(); renderRosterInfo(); save();
       toast(`${f.name}을(를) 불러왔어요.`);
