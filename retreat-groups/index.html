@@ -378,43 +378,10 @@ function attOf(id) { return S.att[id] || { s: 'in', days: [] }; }
 function attends(id, day) { const a = attOf(id); if (a.s === 'out') return false; if (a.s === 'in') return true; if (day === 'all') return (a.days || []).length > 0; return (a.days || []).includes(day); }
 function attendsAny(id) { const a = attOf(id); return a.s === 'in' || (a.s === 'part' && (a.days || []).length > 0); }
 
-/* ================= sample ================= */
-function sample() {
-  let seed = 7; const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  const pick = a => a[Math.floor(r() * a.length)];
-  const sur = '김이박최정강조윤장임한오서신권황안송홍'.split('');
-  const mg = ['민준', '서준', '도윤', '예준', '시우', '하준', '주원', '지호', '준우', '현우', '건우', '우진', '선우', '연우', '유준', '정우', '승우', '은찬'];
-  const fg = ['서연', '서윤', '지우', '서현', '민서', '하은', '하윤', '윤서', '지민', '채원', '수아', '지아', '은서', '다은', '예은', '수빈', '소율', '예린'];
-  const used = new Set();
-  const nm = male => { let n; do n = pick(sur) + pick(male ? mg : fg); while (used.has(n)); used.add(n); return n; };
-  const st = blank(); st.sample = true;
-  st.meta = { title: '2027 중등부 겨울수련회', start: '2027-01-08', end: '2027-01-10' };
-  const sizes = [9, 6, 11, 7, 5, 10, 8, 4];
-  ['중1 남1반', '중1 여1반', '중1 여2반', '중2 남1반', '중2 여1반', '중3 남1반', '중3 남2반', '중3 여1반'].forEach((n, i) => st.classes.push({ id: 'c' + i, name: n, gender: n.includes('남') ? '남' : '여' }));
-  const T = (name, gender, role, cls = '', team = '', praise = false, tf = false) => { const t = { id: nid('t'), name, gender, role, cls, team, praise, tf, note: '' }; st.teachers.push(t); return t; };
-  const mains = [];
-  st.classes.forEach((c, i) => {
-    const male = c.gender === '남';
-    mains.push(T(nm(male), c.gender, '반사', c.id, '', i === 2, i === 0 ? 'media' : ''));
-    if (sizes[i] >= 9) T(nm(male), c.gender, '보조교사', c.id);
-    for (let k = 0; k < sizes[i]; k++) st.students.push({ id: nid('s'), name: nm(male), gender: c.gender, cls: c.id, note: '' });
-  });
-  T(nm(true), '남', '팀장', '', '레크리에이션팀', false, 'general');
-  T(nm(false), '여', '팀장', '', '식사·간식팀', false, 'general');
-  T(nm(false), '여', '내부스탭', '', '레크리에이션팀'); T(nm(true), '남', '내부스탭', '', '레크리에이션팀', true); T(nm(false), '여', '외부스탭', '', '식사·간식팀'); T(nm(true), '남', '외부스탭', '', '식사·간식팀');
-  T(nm(true), '남', '행정', '', '', false, 'admin');
-  T(nm(false), '여', '찬양팀', '', '', true); T(nm(true), '남', '찬양팀', '', '', true);
-  st.students.forEach((x, i) => { if (i % 9 === 3) x.praise = true; });
-  autoInfo(st);
-  st.att[mains[1].id] = { s: 'out', days: [] };
-  st.att[mains[4].id] = { s: 'part', days: ['2027-01-09', '2027-01-10'] };
-  st.students.forEach((s, i) => { if (i % 13 === 4) st.att[s.id] = { s: 'out', days: [] }; else if (i % 11 === 7) st.att[s.id] = { s: 'part', days: ['2027-01-08', '2027-01-09'] }; });
-  return st;
-}
 function autoInfo(st) {
   st.info.tf = Object.fromEntries(TF_CATS.map(([k]) => [k, st.teachers.filter(t => t.tf === k).map(t => t.name).join(', ')]));
   const teams = new Map();
-  st.teachers.forEach(t => { if (!t.team) return; if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, leader: '', members: [] }); const g = teams.get(t.team); if (t.role === '팀장' && !g.leader) g.leader = t.id; else g.members.push(t.id); });
+  st.teachers.forEach(t => { if (!t.team) return; if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, leader: '', members: [] }); const g = teams.get(t.team); if ((t.role === '팀장' || t.lead) && !g.leader) g.leader = t.id; else g.members.push(t.id); });
   st.teachers.filter(t => t.role === '팀장' && !t.team).forEach(t => teams.set('#' + t.id, { id: nid('g'), name: `${t.name} 팀`, leader: t.id, members: [] }));
   st.info.teams = [...teams.values()];
 }
@@ -507,10 +474,12 @@ async function buildTemplate() {
   const t = wb.addWorksheet('교사'); styleSheet(t, T_COLS);
   [['예) 김은혜', '여', '반사', '중1 여1반', '', '', '미디어/예배', '참석', '', ''], ['예) 박성민', '남', '보조교사', '중1 남1반', '', '', '', '부분참석', '2일차, 3일차', ''], ['예) 이준호', '남', '팀장', '', '레크리에이션팀', '', '전체총괄', '참석', '', ''], ['예) 최다은', '여', '외부스탭', '', '레크리에이션팀', 'O', '', '참석', '', '']]
     .forEach(r => { t.addRow(r).font = EX_FONT; });
+  sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role === '기타' ? '' : p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', '', '', '', '']));
   teacherValid(t, T_MAX);
 
   const s = wb.addWorksheet('학생'); styleSheet(s, S_COLS);
   [['중1 남1반', '예) 정하준', '남', 'O', '참석', '', ''], ['중1 여1반', '예) 윤서연', '여', '', '부분참석', '1일차, 2일차', '']].forEach(r => { s.addRow(r).font = EX_FONT; });
+  sortedStudents().forEach(p => s.addRow([clsName(p.cls), p.name, p.gender, p.praise ? 'O' : '', '', '', '']));
   studentValid(s, S_MAX);
   return wb.xlsx.writeBuffer();
 }
@@ -544,9 +513,70 @@ function readSheet(ws) {
   return rows.slice(hi + 1).map(r => { const o = {}; head.forEach((h, i) => { if (h) o[h] = r[i]; }); return o; });
 }
 const pickCol = (o, ...names) => { for (const n of names) for (const k in o) if (k.replace(/\s+/g, '') === n) return o[k]; return undefined; };
+// 송청 출석부 앱 [전체 다운로드] 파일: '전체학생정보' + '교사정보' 시트. 이름·성별·부서·학년·반사·사역만 읽는다.
+function importAttendanceApp(wb, find) {
+  const st = blank(); const issues = [];
+  const clsMap = new Map();
+  const classKey = (svc, grade, teacher) => [svc, grade, teacher].map(x => String(x || '').trim()).join('|');
+  const getCls = (svc, grade, teacher) => {
+    if (!teacher) return '';
+    const k = classKey(svc, grade, teacher);
+    if (!clsMap.has(k)) { const c = { id: nid('c'), name: [svc, grade, `${teacher}반`].filter(Boolean).join(' '), teacher }; clsMap.set(k, c); st.classes.push(c); }
+    return clsMap.get(k).id;
+  };
+  let skippedS = 0, skippedT = 0;
+  readSheet(find(/전체학생정보/)).forEach(o => {
+    const name = cellText(pickCol(o, '이름')); if (!name) return;
+    const status = cellText(pickCol(o, '재적상태'));
+    if (status && status !== '재적') { skippedS++; return; }
+    const gender = normGender(cellText(pickCol(o, '성별')));
+    if (!gender) issues.push(`학생 ${name}: 성별이 비어 있어요.`);
+    const svc = cellText(pickCol(o, '부서')), grade = cellText(pickCol(o, '학년')), teacher = cellText(pickCol(o, '반사'));
+    const cls = getCls(svc, grade, teacher);
+    if (!cls) issues.push(`학생 ${name}: 반사가 없어 대기석에서 시작해요.`);
+    st.students.push({ id: nid('s'), name, gender, cls, praise: /찬양/.test(cellText(pickCol(o, '사역'))), note: '' });
+  });
+  const classOfTeacher = new Map(); st.classes.forEach(c => { if (!classOfTeacher.has(c.teacher)) classOfTeacher.set(c.teacher, c.id); });
+  readSheet(find(/교사정보/)).forEach(o => {
+    const name = cellText(pickCol(o, '이름')); if (!name) return;
+    const status = cellText(pickCol(o, '교사상태'));
+    if (status && status !== '현교사') { skippedT++; return; }
+    const gender = normGender(cellText(pickCol(o, '성별')));
+    if (!gender) issues.push(`교사 ${name}: 성별이 비어 있어요.`);
+    const dept = cellText(pickCol(o, '부서'));
+    const [main, sub = ''] = cellText(pickCol(o, '담당사역')).split('/').map(x => x.trim());
+    const area = main || dept;
+    const cls = classOfTeacher.get(name) || '';
+    let role = '기타', team = '';
+    if (cls) role = '반사';
+    else if (/보조/.test(sub)) role = '보조교사';
+    else if (/찬양/.test(area)) { role = '찬양팀'; team = '찬양팀'; }
+    else if (/예배/.test(area)) { role = '내부스탭'; team = '예배팀'; }
+    else if (/행정/.test(area)) { role = '행정'; team = '행정팀'; }
+    else if (/부장|팀장|새가족/.test(sub)) role = '내부스탭';
+    else if (/교사|1부|2부/.test(area)) role = '보조교사';
+    const t = { id: nid('t'), name, gender, role, cls, team, praise: role === '찬양팀', tf: '', lead: !!team && /팀장/.test(sub) && !/부팀장/.test(sub), note: sub || '' };
+    if (role === '보조교사') issues.push(`보조교사 ${name}: 출석부 파일에 담당 반이 없어서 반 배치판 대기석에서 시작해요.`);
+    st.teachers.push(t);
+  });
+  // 반사가 교사정보에 없으면(사임 등) 반사 이름만으로 자리 표시
+  st.classes.forEach(c => { if (!st.teachers.some(t => t.cls === c.id)) issues.push(`${c.name}: 반사 ${c.teacher}님이 현교사 명단에 없어요.`); delete c.teacher; });
+  st.classes.sort((a, b) => ko(a.name, b.name));
+  if (skippedS) issues.push(`재적이 아닌 학생 ${skippedS}명(장결자·이동 등)은 빼고 불러왔어요.`);
+  if (skippedT) issues.push(`현교사가 아닌 선생님 ${skippedT}명(사임·휴직)은 빼고 불러왔어요.`);
+  st.classes.forEach(c => {
+    const ss = st.students.filter(x => x.cls === c.id); const m = ss.filter(x => x.gender === '남').length, f = ss.filter(x => x.gender === '여').length;
+    if (m && f) issues.push(`${c.name}: 남학생 ${m}명, 여학생 ${f}명이 섞여 있어요. 반 배치판에서 옮겨 주세요.`);
+  });
+  if (!st.teachers.length && !st.students.length) throw new Error('empty');
+  st.attX = null;
+  autoInfo(st); ensureGenders(st);
+  return { st, issues, source: 'app' };
+}
 async function importFile(file) {
   const X = await loadExcel(); const wb = new X.Workbook(); await wb.xlsx.load(await file.arrayBuffer());
   const find = re => wb.worksheets.find(w => re.test(w.name));
+  if (find(/전체학생정보/) || find(/교사정보/)) return importAttendanceApp(wb, find);
   const st = blank(); const issues = [];
   const bi = find(/기본/);
   if (bi) bi.eachRow(row => { const k = cellText(row.getCell(1).value).replace(/\s+/g, ''); const v = row.getCell(2).value;
@@ -727,9 +757,9 @@ function renderRoster() {
     <section class="panel">
       <h2>명단 올리기</h2>
       <div class="flow">
-        <div class="card"><b>1</b><h3>템플릿 받기</h3><p class="hint">기본정보·교사·학생 시트가 들어 있어요. 성별과 역할은 칸을 누르면 목록에서 고를 수 있어요.</p><div><button class="btn" type="button" data-act="template">템플릿 다운로드</button></div></div>
+        <div class="card"><b>1</b><h3>템플릿 받기</h3><p class="hint">기본정보·교사·학생 시트가 들어 있어요. 명단을 먼저 올렸다면 선생님·학생 이름이 채워진 템플릿이 받아져요. 성별과 역할은 칸을 누르면 목록에서 고를 수 있어요.</p><div><button class="btn" type="button" data-act="template">템플릿 다운로드</button></div></div>
         <div class="card"><b>2</b><h3>명단 채우기</h3><p class="hint">선생님은 역할(반사·보조교사·내부/외부스탭·팀장·행정·찬양팀)과 담당 학년반, 참석을, 학생은 학년반·이름·성별·찬양팀·참석을 적어요. 같은 팀 이름을 적으면 팀으로 묶여요.</p></div>
-        <div class="card"><b>3</b><h3>파일 올리기</h3><div class="drop-zone" id="dz" tabindex="0" role="button">.xlsx 파일을 끌어 놓거나 눌러서 고르세요</div><p class="hint">이 도구에서 받은 <b>데이터 파일</b>을 올리면 참석과 반 배치까지 이어서 불러와요.</p></div>
+        <div class="card"><b>3</b><h3>파일 올리기</h3><p class="hint"><b>송청 출석부 앱</b> 관리자 화면의 [전체 다운로드] 파일을 그대로 올려도 학생·선생님 명단이 들어와요.</p><div class="drop-zone" id="dz" tabindex="0" role="button">.xlsx 파일을 끌어 놓거나 눌러서 고르세요</div><p class="hint">이 도구에서 받은 <b>데이터 파일</b>을 올리면 참석과 반 배치까지 이어서 불러와요.</p></div>
       </div>
       ${lastIssues.length ? `<div class="notice"><b>확인할 점 ${lastIssues.length}건</b><br>${lastIssues.slice(0, 12).map(esc).join('<br>')}${lastIssues.length > 12 ? `<br>외 ${lastIssues.length - 12}건` : ''}</div>` : ''}
     </section>
@@ -805,9 +835,9 @@ function renderInfo() {
       <p class="hint">항목마다 이름을 쉼표로 구분해 적으세요. 템플릿 교사 시트의 TF 칸에서 고른 선생님은 자동으로 들어와요.</p>
       ${TF_CATS.map(([k, l]) => `<div class="fld"><label for="tf-${k}">${l}</label><input class="inp" id="tf-${k}" data-tfc="${k}" value="${esc(S.info.tf[k])}" placeholder="이름, 이름"><div id="tfChips-${k}">${nameChips(S.info.tf[k])}</div></div>`).join('')}
       <p class="hint"><span class="chip ok">초록</span> 교사 명단에 있는 이름, <span class="chip warn">노랑</span> 명단에 없는 이름이에요.</p>
-      <div class="row" style="margin-top:6px"><h2>팀</h2><span class="spacer"></span><button class="btn small" type="button" data-go="teams">팀원 구성에서 바꾸기</button></div>
-      <p class="hint">엑셀 교사 시트의 팀 이름으로 묶은 팀이에요. 팀원은 참석 체크 다음 <b>팀원 구성</b> 단계에서 정해요.</p>
-      ${S.info.teams.length ? `<div class="tbl-wrap"><table><thead><tr><th>팀</th><th>팀장</th><th>팀원</th></tr></thead><tbody>${S.info.teams.map(tm => `<tr><td><b>${esc(tm.name || '(이름 없음)')}</b></td><td>${esc(tName(tm.leader)) || '<span class="flag">없음</span>'}</td><td>${tm.members.length ? `<div class="chips">${tm.members.map(id => `<span class="chip">${esc(tName(id))}</span>`).join('')}</div>` : '<span class="mute">–</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">아직 팀이 없어요.</p>'}
+      <div class="row" style="margin-top:6px"><h2>팀</h2><span class="spacer"></span><button class="btn small" type="button" data-act="addTeam">+ 팀 추가</button></div>
+      <p class="hint">엑셀에서 묶인 팀이 먼저 들어와 있어요. 팀 이름은 여기서 고치고, 팀장·팀원은 참석 체크 다음 <b>팀원 구성</b> 단계에서 정해요.</p>
+      ${S.info.teams.length ? `<div class="tbl-wrap"><table><thead><tr><th>팀</th><th>팀장</th><th>팀원</th><th></th></tr></thead><tbody>${S.info.teams.map(tm => `<tr><td><input class="inp" style="min-width:120px" id="itn-${tm.id}" data-teamname="${tm.id}" value="${esc(tm.name)}" placeholder="팀 이름" aria-label="팀 이름"></td><td>${esc(tName(tm.leader)) || '<span class="flag">없음</span>'}</td><td>${tm.members.length ? `<div class="chips">${tm.members.map(id => `<span class="chip">${esc(tName(id))}</span>`).join('')}</div>` : '<span class="mute">–</span>'}</td><td><button class="btn small ghost danger" type="button" data-delteam="${tm.id}">지우기</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">아직 팀이 없어요. <b>+ 팀 추가</b>를 누르세요.</p>'}
     </section>
   </div>
   <div class="row" style="margin-top:16px"><button class="btn" type="button" data-go="roster">← 명단</button><span class="spacer"></span><button class="btn primary" type="button" data-go="attendance">다음: 참석 체크 →</button></div>`;
@@ -1006,7 +1036,7 @@ async function doDownload(kind) {
 
 let drag = null, justDragged = false;
 function init() {
-  if (!load()) S = sample();
+  if (!load() || S.sample) { S = blank(); try { localStorage.removeItem(STORE); } catch (e) {} }
   const h = location.hash.slice(1); if (STEPS.some(s => s[0] === h)) S.step = h;
   render();
   window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (STEPS.some(s => s[0] === k) && k !== S.step) go(k); });
@@ -1025,7 +1055,7 @@ function init() {
     if (act) {
       const a = act.dataset.act;
       if (a === 'template') doDownload('template');
-      else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, leader: '', members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id); if (el) { el.focus(); el.select(); } }
+      else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, leader: '', members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
       else if (a === 'resetDay') { delete S.plans[S.day]; save(); render(); toast('이날 배치를 원래 학년반으로 되돌렸어요.'); }
