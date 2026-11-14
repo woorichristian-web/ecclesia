@@ -160,6 +160,11 @@ textarea.inp { resize: vertical; min-height: 60px; line-height: 1.5; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; display: inline-block; }
 .dot.m { background: var(--male); } .dot.f { background: var(--female); }
 
+.verbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.verlab { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.verchip { border: 1px solid var(--line); background: var(--sunken); border-radius: 999px; padding: 4px 14px; font-family: var(--f-num); font-size: 13px; cursor: pointer; color: var(--muted); }
+.verchip.on { background: var(--stone); color: var(--stone-ink); border-color: var(--stone); font-weight: 500; }
+.verchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .daytabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .daytab { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 14px; cursor: pointer; text-align: left; display: flex; flex-direction: column; min-width: 150px; }
 .daytab b { font-size: 14px; }
@@ -308,12 +313,20 @@ const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['atte
 
 /* ================= state ================= */
 const blank = () => ({ v: 2, sample: false, meta: { title: '', start: '', end: '' }, classes: [], teachers: [], students: [],
-  info: { ov: {}, tf: { general: '', admin: '', media: '' }, teams: [] }, att: {}, plans: {}, step: 'roster', day: null });
+  info: { ov: {}, tf: { general: '', admin: '', media: '' }, teams: [] }, att: {}, plans: {}, versions: [], ver: null, step: 'roster', day: null });
 let S = blank();
 let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }, 200); }
+function ensureVersions(st) {
+  if (!Array.isArray(st.versions) || !st.versions.length) st.versions = [{ id: 'v1', name: 'Ver.1', plans: st.plans || {} }];
+  const cur = st.versions.find(v => v.id === st.ver) || st.versions[0];
+  st.ver = cur.id; st.plans = cur.plans;
+}
+const curVer = () => S.versions.find(v => v.id === S.ver);
+function flush() { clearTimeout(saveT); saveT = null; try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { plans: undefined }))); } catch (e) {} }
+function save() { clearTimeout(saveT); saveT = setTimeout(flush, 200); }
+window.addEventListener('pagehide', () => { if (saveT) flush(); });
 function load() {
-  try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
+  try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); ensureVersions(S); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
     if (typeof S.info.tf === 'string') S.info.tf = { general: S.info.tf, admin: '', media: '' };
     S.info.tf = Object.assign({ general: '', admin: '', media: '' }, S.info.tf);
     const byName = n => (S.teachers.find(t => t.name === n) || {}).id;
@@ -619,7 +632,11 @@ async function importFile(file) {
   const plan = find(/^배치/);
   if (plan) {
     const byName = new Map(); st.teachers.forEach(p => byName.set('교사|' + p.name, p)); st.students.forEach(p => byName.set('학생|' + p.name, p));
+    const verMap = new Map();
     readSheet(plan).forEach(o => {
+      const vname = cellText(pickCol(o, '버전')) || 'Ver.1';
+      if (!verMap.has(vname)) verMap.set(vname, { id: nid('v'), name: vname, plans: {} });
+      st.plans = verMap.get(vname).plans;
       const raw = pickCol(o, '날짜'); const day = cellText(raw) === '전체 일정' ? 'all' : toISODate(raw); if (!day) return;
       const p = byName.get(cellText(pickCol(o, '구분')) + '|' + cellText(pickCol(o, '이름'))); if (!p) return;
       const gname = cellText(pickCol(o, '반'));
@@ -629,7 +646,10 @@ async function importFile(file) {
       if (!g) { const home = st.classes.find(c => c.name === gname); g = { id: home && !pl.groups.some(x => x.id === home.id) ? home.id : nid('x'), name: gname }; pl.groups.push(g); }
       pl.at[p.id] = g.id;
     });
-    Object.values(st.plans).forEach(pl => st.classes.forEach(c => { if (!pl.groups.some(g => g.id === c.id)) pl.groups.push({ id: c.id, name: c.name }); }));
+    st.versions = [...verMap.values()]; st.ver = st.versions.length ? st.versions[0].id : null;
+    st.versions.forEach(v => Object.values(v.plans).forEach(pl => st.classes.forEach(c => { if (!pl.groups.some(g => g.id === c.id)) pl.groups.push({ id: c.id, name: c.name }); })));
+    ensureVersions(st);
+    st.versions.forEach(v => { st.plans = v.plans; ensureGenders(st); }); ensureVersions(st);
   }
   ensureGenders(st);
   return { st, issues };
@@ -658,10 +678,11 @@ async function buildData() {
   sortedStudents().forEach(p => s.addRow([clsName(p.cls), p.name, p.gender, p.praise ? 'O' : '', attText(p.id), attDays(p.id), p.note]));
   studentValid(s, S.students.length + 50);
 
-  const all = wb.addWorksheet('배치(전체)'); styleSheet(all, [['날짜', 12], ['일차', 16], ['반', 14], ['구분', 7], ['이름', 14], ['성별', 7], ['역할', 10], ['원래 학년반', 12]]);
-  ds.forEach(d => {
+  const all = wb.addWorksheet('배치(전체)'); styleSheet(all, [['버전', 8], ['날짜', 12], ['일차', 16], ['반', 14], ['구분', 7], ['이름', 14], ['성별', 7], ['역할', 10], ['원래 학년반', 12]]);
+  const keepPlans = S.plans;
+  S.versions.forEach(v => { S.plans = v.plans; ds.forEach(d => {
     const L = layout(d.key);
-    const sh = wb.addWorksheet(`${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 31));
+    const sh = wb.addWorksheet(`${v.name} ${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 31));
     const cols = L.groups.slice();
     if (L.tray.teachers.length || L.tray.students.length) cols.push({ g: { id: '', name: '대기석' }, teachers: L.tray.teachers, students: L.tray.students });
     sh.columns = cols.map(x => ({ header: x.g.name + (x.g.gender && !x.g.name.includes(x.g.gender) ? ` (${x.g.gender})` : ''), width: 18 }));
@@ -670,8 +691,9 @@ async function buildData() {
     const max = Math.max(0, ...cols.map(x => x.students.length));
     for (let i = 0; i < max; i++) sh.addRow(cols.map(x => { const p = x.students[i]; return p ? p.name + (x.g.id && p.cls !== x.g.id ? ` (${clsName(p.cls)})` : '') : ''; }));
     sh.addRow([]); sh.addRow(cols.map(x => `학생 ${x.students.length}명`)).font = EX_FONT;
-    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.addRow([d.key === 'all' ? '전체 일정' : d.key, `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
-  });
+    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.addRow([v.name, d.key === 'all' ? '전체 일정' : d.key, `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
+  }); });
+  S.plans = keepPlans;
   return wb.xlsx.writeBuffer();
 }
 
@@ -796,7 +818,7 @@ async function handleFile(f) {
   } catch (e) { toast(e && e.message === 'excel' ? '엑셀 도구를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.' : '파일에서 교사·학생 시트를 찾지 못했어요. 템플릿 형식인지 확인해 주세요.'); }
 }
 function applyImport(res) {
-  const step = S.step; S = res.st; S.step = step; S.day = null; lastIssues = res.issues; save(); render();
+  const step = S.step; S = res.st; ensureVersions(S); S.step = step; S.day = null; lastIssues = res.issues; save(); render();
   toast(`교사 ${S.teachers.length}명, 학생 ${S.students.length}명을 불러왔어요.`);
 }
 function showConfirm(html) {
@@ -950,6 +972,7 @@ function renderBoard() {
   const idx = ds.findIndex(d => d.key === day);
   $('#view').innerHTML = `
   <div class="stack" style="gap:12px">
+    <div class="verbar"><span class="verlab">배치 버전</span>${S.versions.map(v => `<button class="verchip${v.id === S.ver ? ' on' : ''}" type="button" data-ver="${v.id}" aria-pressed="${v.id === S.ver}">${esc(v.name)}</button>`).join('')}<button class="btn small" type="button" data-act="addVer">+ 새 버전</button><span class="spacer"></span>${S.versions.length > 1 ? (verDel ? `<span class="hint">${esc(curVer().name)}을(를) 지울까요?</span><button class="btn small danger" type="button" data-act="delVerYes">지우기</button><button class="btn small ghost" type="button" data-act="delVerNo">취소</button>` : `<button class="btn small ghost danger" type="button" data-act="delVer">${esc(curVer().name)} 삭제</button>`) : ''}</div>
     ${ds.length > 1 ? `<div class="daytabs" role="tablist">${ds.map(d => { const l = layout(d.key); const bad = l.groups.filter(x => !x.teachers.length && x.students.length).length; return `<button class="daytab${d.key === day ? ' on' : ''}" role="tab" aria-selected="${d.key === day}" type="button" data-dayt="${d.key}"><b>${d.label} · ${d.short}</b><span class="${bad ? 'bad' : ''}">${bad ? `선생님 없는 반 ${bad}개` : '반마다 선생님 있음'}</span></button>`; }).join('')}</div>` : ''}
     <div class="boardbar">
       <div class="kpis"><div><b>${L.groups.length}</b><span>개 반</span></div><div><b>${tT}</b><span>교사 참석</span></div><div><b>${tS}</b><span>학생 참석</span></div>${noT.length ? `<div class="bad"><b>${noT.length}</b><span>선생님 없는 반</span></div>` : ''}</div>
@@ -958,7 +981,7 @@ function renderBoard() {
       ${noT.length ? '<button class="btn small" type="button" data-act="spread">선생님 없는 반 학생 나누기</button>' : ''}
       <button class="btn small" type="button" data-act="addGroup" data-g="남">+ 남학생반</button>
       <button class="btn small" type="button" data-act="addGroup" data-g="여">+ 여학생반</button>
-      <button class="btn small ghost" type="button" data-act="resetDay">원래 학년반으로</button>
+      <button class="btn small${delMode ? ' primary' : ' danger'}" type="button" data-act="delMode" aria-pressed="${delMode}">${delMode ? '삭제 끝내기' : '반 삭제'}</button>
     </div>
     <div class="legend">${stone({ id: '', name: '선생님', gender: '', role: '반사' }, true, '', false, true)}${stone({ id: '', name: '남학생', gender: '남' }, false, '', false, true)}${stone({ id: '', name: '여학생', gender: '여' }, false, '', false, true)}${stone({ id: '', name: '불참 선생님', gender: '', role: '반사' }, true, '', true, true)}<span>이름을 끌어 다른 반에 놓으세요. 학생은 같은 성별 반으로만 옮겨져요. 휴대폰은 눌러서 고른 뒤 옮길 반을 누르면 돼요. 오른쪽 작은 글씨는 원래 학년반이에요.</span></div>
     <div class="board" id="board">
@@ -978,10 +1001,10 @@ function renderBoard() {
 function tile(x) {
   const m = x.students.filter(s => s.gender === '남').length, f = x.students.filter(s => s.gender === '여').length;
   const noT = !x.teachers.length && x.students.length;
-  const canDel = !S.classes.some(c => c.id === x.g.id);
+  const canDel = delMode;
   return `<section data-g="${esc(x.g.gender || '')}" class="tile ${gCode(x.g.gender)}${noT ? ' noteacher' : ''}" data-drop="${x.g.id}">
     <header>
-      <div class="tname"><input id="gn-${x.g.id}" data-gname="${x.g.id}" value="${esc(x.g.name)}" aria-label="반 이름">${canDel ? `<button class="btn small ghost danger" type="button" data-delgroup="${x.g.id}">지우기</button>` : ''}</div>
+      <div class="tname"><input id="gn-${x.g.id}" data-gname="${x.g.id}" value="${esc(x.g.name)}" aria-label="반 이름">${canDel ? `<button class="btn small ghost danger" type="button" data-delgroup="${x.g.id}">이 반 삭제</button>` : ''}</div>
       <div class="tcount"><span>교사 <b>${x.teachers.length}</b></span><span>학생 <b>${x.students.length}</b></span>${x.g.gender ? `<span class="badge ${gCode(x.g.gender)}">${x.g.gender}</span>` : ''}${m && f ? '<span class="flag soft">남녀 섞임</span>' : ''}${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
     </header>
     <div class="tslot">${x.teachers.map(p => stone(p, true, x.g.id, false)).join('')}${x.offTeachers.map(p => stone(p, true, x.g.id, true)).join('')}${!x.teachers.length && !x.offTeachers.length ? '<span class="empty">선생님을 끌어 놓으세요</span>' : ''}</div>
@@ -1034,9 +1057,10 @@ async function doDownload(kind) {
   finally { busy = false; }
 }
 
-let drag = null, justDragged = false;
+let drag = null, justDragged = false, delMode = false, verDel = false;
 function init() {
   if (!load() || S.sample) { S = blank(); try { localStorage.removeItem(STORE); } catch (e) {} }
+  ensureVersions(S);
   const h = location.hash.slice(1); if (STEPS.some(s => s[0] === h)) S.step = h;
   render();
   window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (STEPS.some(s => s[0] === k) && k !== S.step) go(k); });
@@ -1058,15 +1082,20 @@ function init() {
       else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, leader: '', members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
-      else if (a === 'resetDay') { delete S.plans[S.day]; save(); render(); toast('이날 배치를 원래 학년반으로 되돌렸어요.'); }
+      else if (a === 'addVer') { const n = Math.max(0, ...S.versions.map(v => parseInt(String(v.name).replace(/\D/g, ''), 10) || 0)) + 1; const v = { id: nid('v'), name: `Ver.${n}`, plans: JSON.parse(JSON.stringify(S.plans)) }; const from = curVer().name; S.versions.push(v); S.ver = v.id; S.plans = v.plans; verDel = false; save(); render(); toast(`${from}을(를) 복사해 ${v.name}을(를) 만들었어요. 이제 ${v.name}에서 옮기면 ${from}은(는) 그대로 남아요.`); }
+      else if (a === 'delVer') { verDel = true; render(); }
+      else if (a === 'delVerNo') { verDel = false; render(); }
+      else if (a === 'delVerYes') { const gone = curVer().name; S.versions = S.versions.filter(v => v.id !== S.ver); S.ver = S.versions[0].id; S.plans = S.versions[0].plans; verDel = false; save(); render(); toast(`${gone}을(를) 지웠어요.`); }
+      else if (a === 'delMode') { delMode = !delMode; render(); if (delMode) toast('지울 반 카드의 [이 반 삭제]를 누르세요. 그 반 사람들은 대기석으로 가요.'); }
       else if (a === 'addGroup') { const pl = plan(S.day); const gg = act.dataset.g; const g = { id: nid('x'), name: `새 ${gg}학생반 ${pl.groups.filter(x => x.gender === gg).length + 1}`, gender: gg }; pl.groups.push(g); save(); render(); const el = $('#gn-' + g.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'spread') spread();
       return;
     }
     const del = t.closest('[data-delteam]'); if (del) { S.info.teams = S.info.teams.filter(x => x.id !== del.dataset.delteam); save(); render(); toast('팀을 지웠어요. 팀원은 팀 없는 선생님으로 돌아갔어요.'); return; }
     const un = t.closest('[data-unov]'); if (un) { delete S.info.ov[un.dataset.unov]; save(); render(); return; }
-    const dg = t.closest('[data-delgroup]'); if (dg) { const pl = plan(S.day); const id = dg.dataset.delgroup; pl.groups = pl.groups.filter(g => g.id !== id); for (const k in pl.at) if (pl.at[k] === id) pl.at[k] = ''; save(); render(); toast('반을 지웠어요. 그 반에 있던 사람은 대기석으로 갔어요.'); return; }
+    const dg = t.closest('[data-delgroup]'); if (dg) { const pl = plan(S.day); const id = dg.dataset.delgroup; const g0 = pl.groups.find(g => g.id === id); pl.groups = pl.groups.filter(g => g.id !== id); for (const k in pl.at) if (pl.at[k] === id) pl.at[k] = ''; save(); render(); toast(`${g0 ? g0.name : '반'}을(를) 이 날짜 배치에서 지웠어요. 그 반 사람들은 대기석으로 갔어요.`); return; }
     const atb = t.closest('[data-atttab]'); if (atb) { attTab = atb.dataset.atttab; render(); return; }
+    const vb = t.closest('[data-ver]'); if (vb) { S.ver = vb.dataset.ver; S.plans = curVer().plans; verDel = false; sel = null; $('#selbar').hidden = true; save(); render(); return; }
     const dt = t.closest('[data-dayt]'); if (dt) { S.day = dt.dataset.dayt; sel = null; $('#selbar').hidden = true; save(); render(); return; }
     const at = t.closest('[data-att]'); if (at) { setAtt(at.closest('[data-pid]').dataset.pid, at.dataset.att); save(); render(); return; }
     const dd = t.closest('[data-day]'); if (dd) { const pid = dd.closest('[data-pid]').dataset.pid; const days = new Set(attOf(pid).days || []); days.has(dd.dataset.day) ? days.delete(dd.dataset.day) : days.add(dd.dataset.day); S.att[pid] = { s: 'part', days: [...days].sort() }; save(); render(); return; }
