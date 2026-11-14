@@ -1,4 +1,4 @@
-<title>수련회 반편성</title>
+<title>분당우리교회 주일학교 수련회 반편성 Tool</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -268,7 +268,7 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
 <div class="wrap">
   <header class="top">
     <div>
-      <h1 id="appTitle">수련회 반편성</h1>
+      <h1 id="appTitle">분당우리교회 주일학교 수련회 반편성 Tool</h1>
       <p class="sub" id="appSub"></p>
     </div>
     <div class="row">
@@ -292,6 +292,7 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STORE = 'retreat-board-v2';
+const APP_NAME = '분당우리교회 주일학교 수련회 반편성 Tool';
 const ROLES = ['반사', '보조교사', '내부스탭', '외부스탭', '팀장', '행정', '찬양팀', '기타'];
 const CLASS_ROLES = new Set(['반사', '보조교사']);
 const STAFF_ROLES = new Set(['내부스탭', '외부스탭', '팀장', '행정']);
@@ -453,10 +454,10 @@ function countFormula(k) {
   return combos.map(c => `COUNTIFS(${[[src.name, '<>'], [src.name, '<>예)*'], ...c].map(([col, v]) => `${rng(col)},"${v}"`).join(',')})`).join('+');
 }
 async function buildTemplate() {
-  const X = await loadExcel(); const wb = new X.Workbook(); wb.creator = '수련회 반편성'; wb.calcProperties.fullCalcOnLoad = true;
+  const X = await loadExcel(); const wb = new X.Workbook(); wb.creator = '분당우리교회 주일학교 수련회 반편성 Tool'; wb.calcProperties.fullCalcOnLoad = true;
   const g = wb.addWorksheet('안내', { properties: { tabColor: { argb: 'FF1F6B52' } } });
   g.getColumn(1).width = 110;
-  [['수련회 반편성 명단 템플릿', true], [''], ['1. [기본정보] 시트에 수련회 이름과 시작일·종료일(예: 2027-01-08)을 적습니다.'],
+  [['분당우리교회 주일학교 수련회 반편성 Tool · 명단 템플릿', true], [''], ['1. [기본정보] 시트에 수련회 이름과 시작일·종료일(예: 2027-01-08)을 적습니다.'],
    ['2. [교사] 시트에 모든 선생님을 한 줄에 한 명씩 적습니다. 성별·역할·찬양팀·TF는 칸을 누르면 나오는 목록에서 고릅니다.'],
    ['   · 역할: 반사 / 보조교사 / 내부스탭 / 외부스탭 / 팀장 / 행정 / 찬양팀 / 기타'],
    ['   · 참석: 참석 / 부분참석 / 불참 중에서 고릅니다. 비워 두면 참석으로 봅니다. 부분참석이면 [참석일]에 "1일차, 2일차" 또는 날짜를 적습니다.'],
@@ -655,7 +656,7 @@ async function importFile(file) {
   return { st, issues };
 }
 async function buildData() {
-  const X = await loadExcel(); const wb = new X.Workbook(); wb.creator = '수련회 반편성';
+  const X = await loadExcel(); const wb = new X.Workbook(); wb.creator = '분당우리교회 주일학교 수련회 반편성 Tool';
   const ds = dates();
   const attText = id => { const a = attOf(id); return a.s === 'out' ? '불참' : a.s === 'part' ? '부분참석' : '참석'; };
   const attDays = id => { const a = attOf(id); return a.s === 'part' ? (a.days || []).slice().sort().join(', ') : ''; };
@@ -751,10 +752,11 @@ function layout(day) {
 }
 
 /* ================= render: shell ================= */
+function setSub() { const ds = dates(); const info = S.meta.start ? `${S.meta.start.replace(/-/g, '.')} – ${(S.meta.end || S.meta.start).replace(/-/g, '.')} · ${ds.length}일 · 교사 ${S.teachers.length}명 · 학생 ${S.students.length}명` : '템플릿에 명단을 채워 올리면, 참석을 체크하고 날짜별로 반을 짤 수 있어요.'; $('#appSub').textContent = (S.meta.title ? S.meta.title + ' · ' : '') + info; }
 function render() {
-  $('#appTitle').textContent = S.meta.title || '수련회 반편성';
+  $('#appTitle').textContent = APP_NAME;
   const ds = dates();
-  $('#appSub').textContent = S.meta.start ? `${S.meta.start.replace(/-/g, '.')} – ${(S.meta.end || S.meta.start).replace(/-/g, '.')} · ${ds.length}일 · 교사 ${S.teachers.length}명 · 학생 ${S.students.length}명` : '템플릿에 명단을 채워 올리면, 참석을 체크하고 날짜별로 반을 짤 수 있어요.';
+  setSub();
   $('#sampleBar').hidden = !S.sample;
   const meta = { roster: S.teachers.length + S.students.length ? `${S.teachers.length + S.students.length}명` : '', board: ds.length > 1 ? `${ds.length}일` : '' };
   $('#steps').innerHTML = STEPS.map(([k, l], i) => `<button class="tab${S.step === k ? ' on' : ''}" type="button" data-step="${k}" aria-current="${S.step === k ? 'page' : 'false'}"><span class="n">${i + 1}</span>${l}${meta[k] ? `<span class="meta">${meta[k]}</span>` : ''}</button>`).join('');
@@ -1110,7 +1112,7 @@ function init() {
   document.addEventListener('keydown', e => { const pc = e.target.closest && e.target.closest('.pc[data-pid]'); if (pc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pc.click(); } });
   document.addEventListener('input', e => {
     const t = e.target;
-    if (t.id === 'mTitle') { S.meta.title = t.value; save(); $('#appTitle').textContent = t.value || '수련회 반편성'; return; }
+    if (t.id === 'mTitle') { S.meta.title = t.value; save(); setSub(); return; }
     if (t.dataset.ov) { if (t.value === '') delete S.info.ov[t.dataset.ov]; else S.info.ov[t.dataset.ov] = t.value; save(); return; }
     if (t.dataset.tfc) { S.info.tf[t.dataset.tfc] = t.value; save(); $('#tfChips-' + t.dataset.tfc).innerHTML = nameChips(t.value); return; }
     if (t.dataset.teamname) { const tm = S.info.teams.find(x => x.id === t.dataset.teamname); if (tm) { tm.name = t.value; save(); } return; }
