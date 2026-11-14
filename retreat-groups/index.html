@@ -130,6 +130,13 @@ textarea.inp { resize: vertical; min-height: 60px; line-height: 1.5; }
 .team .inp { background: var(--surface); }
 @media (max-width: 560px) { .team { grid-template-columns: minmax(0, 1fr) auto; } .team .fld:nth-child(2) { grid-column: 1 / -1; grid-row: 2; } }
 
+.atttabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.atttab { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px; cursor: pointer; text-align: left; display: flex; flex-direction: column; min-width: 0; }
+.atttab b { font-size: 14px; }
+.atttab span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atttab.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.atttab.on b { color: var(--accent); }
+.atttab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .daystat { display: flex; flex-wrap: wrap; gap: 8px; }
 .daystat div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; background: var(--sunken); font-size: 12.5px; }
 .daystat b { font-family: var(--f-num); font-weight: 500; font-size: 14px; }
@@ -209,6 +216,13 @@ body.picking [data-drop] { cursor: pointer; border-style: dashed; border-color: 
 .tslot .empty { font-size: 12px; color: var(--bad); }
 .sslot { padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 56px; align-content: flex-start; }
 .sslot .empty, .tray .empty { font-size: 12px; color: var(--muted); }
+.team-tile .tslot, .team-tile .sslot { position: relative; transition: background .12s; }
+.slotlab { font-size: 11px; color: var(--muted); width: 100%; letter-spacing: .02em; }
+.team-tile .tslot { border-bottom: 1px dashed var(--line); }
+.tslot.over, .sslot.over { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent) !important; border-color: var(--line) !important; }
+body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: dashed; }
+.pc.gone { opacity: .5; }
+.edited { font-size: 10.5px; border-radius: 3px; padding: 0 4px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
 .absent { padding: 0 12px 10px; font-size: 11.5px; color: var(--muted); }
 
 .pc { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: manipulation; max-width: 100%; transition: transform .1s, box-shadow .1s; }
@@ -290,7 +304,7 @@ const tfLabel = k => (TF_CATS.find(c => c[0] === k) || ['', ''])[1];
 function normTf(v) { v = String(v || '').replace(/\s+/g, ''); if (!v) return ''; if (/미디어|예배|방송|영상/.test(v)) return 'media'; if (/행정|회계|총무/.test(v)) return 'admin'; if (/총괄|전체/.test(v) || yes(v)) return 'general'; return ''; }
 function tfOf(name) { for (const [k] of TF_CATS) if (splitNames(S.info.tf[k]).includes(name)) return k; return ''; }
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
-const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['attendance', '참석 체크'], ['board', '반 배치']];
+const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['attendance', '참석 체크'], ['teams', '팀원 구성'], ['board', '반 배치']];
 
 /* ================= state ================= */
 const blank = () => ({ v: 2, sample: false, meta: { title: '', start: '', end: '' }, classes: [], teachers: [], students: [],
@@ -301,7 +315,12 @@ function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localSto
 function load() {
   try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
     if (typeof S.info.tf === 'string') S.info.tf = { general: S.info.tf, admin: '', media: '' };
-    S.info.tf = Object.assign({ general: '', admin: '', media: '' }, S.info.tf); ensureGenders(S); return true; } catch (e) { return false; }
+    S.info.tf = Object.assign({ general: '', admin: '', media: '' }, S.info.tf);
+    const byName = n => (S.teachers.find(t => t.name === n) || {}).id;
+    S.info.teams.forEach(tm => {
+      if (tm.leader && !S.teachers.some(t => t.id === tm.leader)) tm.leader = byName(tm.leader) || '';
+      if (!Array.isArray(tm.members)) tm.members = splitNames(tm.members).map(byName).filter(Boolean);
+    }); ensureGenders(S); return true; } catch (e) { return false; }
 }
 let uid = 0; const nid = p => p + Date.now().toString(36) + (uid++).toString(36);
 
@@ -395,9 +414,9 @@ function sample() {
 function autoInfo(st) {
   st.info.tf = Object.fromEntries(TF_CATS.map(([k]) => [k, st.teachers.filter(t => t.tf === k).map(t => t.name).join(', ')]));
   const teams = new Map();
-  st.teachers.forEach(t => { if (!t.team) return; if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, leader: '', members: [] }); const g = teams.get(t.team); if (t.role === '팀장' && !g.leader) g.leader = t.name; else g.members.push(t.name); });
-  st.teachers.filter(t => t.role === '팀장' && !t.team).forEach(t => teams.set('#' + t.id, { id: nid('g'), name: '', leader: t.name, members: [] }));
-  st.info.teams = [...teams.values()].map(g => ({ id: g.id, name: g.name, leader: g.leader, members: g.members.join(', ') }));
+  st.teachers.forEach(t => { if (!t.team) return; if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, leader: '', members: [] }); const g = teams.get(t.team); if (t.role === '팀장' && !g.leader) g.leader = t.id; else g.members.push(t.id); });
+  st.teachers.filter(t => t.role === '팀장' && !t.team).forEach(t => teams.set('#' + t.id, { id: nid('g'), name: `${t.name} 팀`, leader: t.id, members: [] }));
+  st.info.teams = [...teams.values()];
 }
 
 /* ================= Excel ================= */
@@ -535,7 +554,8 @@ async function importFile(file) {
   const clsMap = new Map();
   const getCls = name => { const k = normCls(name); if (!k) return ''; if (!clsMap.has(k)) { const c = { id: nid('c'), name: String(name).trim() }; clsMap.set(k, c); st.classes.push(c); } return clsMap.get(k).id; };
   const isEx = n => /^예\)/.test(n);
-  const attIn = (o, id) => { const a = cellText(pickCol(o, '참석')); if (!a) return; const s = /불참/.test(a) ? 'out' : /부분/.test(a) ? 'part' : 'in';
+  let attRows = 0;
+  const attIn = (o, id) => { const a = cellText(pickCol(o, '참석')); if (!a) return; attRows++; const s = /불참/.test(a) ? 'out' : /부분/.test(a) ? 'part' : 'in';
     if (s === 'in') return; st.att[id] = { s, days: s === 'part' ? parseDays(pickCol(o, '참석일'), st.meta.start) : [] }; };
   readSheet(find(/학생/)).forEach(o => {
     const name = cellText(pickCol(o, '이름', '성명')); if (!name || isEx(name)) return;
@@ -557,6 +577,7 @@ async function importFile(file) {
     st.teachers.push(t); attIn(o, t.id);
   });
   if (!st.teachers.length && !st.students.length) throw new Error('empty');
+  st.attX = attRows ? JSON.parse(JSON.stringify(st.att)) : null;
   st.classes.sort((a, b) => ko(a.name, b.name));
   st.classes.forEach(c => {
     if (!st.teachers.some(t => t.cls === c.id && t.role === '반사')) issues.push(`${c.name}: 반사가 지정되지 않았어요.`);
@@ -597,7 +618,8 @@ async function buildData() {
   b.addRow([]);
   b.addRow(['TF', '']).font = { bold: true };
   TF_CATS.forEach(([k, l]) => b.addRow([`TF · ${l}`, splitNames(S.info.tf[k]).join(', ')]));
-  S.info.teams.forEach(tm => b.addRow([`팀 · ${tm.name || '(이름 없음)'}`, `팀장 ${tm.leader || '-'} / 팀원 ${splitNames(tm.members).join(', ') || '-'}`]));
+  b.addRow([]); b.addRow(['팀', '']).font = { bold: true };
+  S.info.teams.forEach(tm => b.addRow([`팀 · ${tm.name || '(이름 없음)'}`, `팀장 ${tName(tm.leader) || '-'} / 팀원 ${tm.members.map(tName).join(', ') || '-'}`]));
 
   const t = wb.addWorksheet('교사'); styleSheet(t, T_COLS);
   sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', tfLabel(tfOf(p.name)), attText(p.id), attDays(p.id), p.note]));
@@ -638,6 +660,7 @@ async function saveFile(name, buf) {
 const stamp = () => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
 
 /* ================= derived ================= */
+const tName = id => (S.teachers.find(t => t.id === id) || {}).name || '';
 function sortedTeachers() { return S.teachers.slice().sort((a, b) => roleOrder(a.role) - roleOrder(b.role) || ko(clsName(a.cls), clsName(b.cls)) || ko(a.name, b.name)); }
 function sortedStudents() { return S.students.slice().sort((a, b) => ko(clsName(a.cls), clsName(b.cls)) || ko(a.name, b.name)); }
 function counts() {
@@ -683,8 +706,8 @@ function render() {
   $('#sampleBar').hidden = !S.sample;
   const meta = { roster: S.teachers.length + S.students.length ? `${S.teachers.length + S.students.length}명` : '', board: ds.length > 1 ? `${ds.length}일` : '' };
   $('#steps').innerHTML = STEPS.map(([k, l], i) => `<button class="tab${S.step === k ? ' on' : ''}" type="button" data-step="${k}" aria-current="${S.step === k ? 'page' : 'false'}"><span class="n">${i + 1}</span>${l}${meta[k] ? `<span class="meta">${meta[k]}</span>` : ''}</button>`).join('');
-  document.body.classList.toggle('picking', !!sel && S.step === 'board');
-  ({ roster: renderRoster, info: renderInfo, attendance: renderAtt, board: renderBoard })[S.step]();
+  document.body.classList.toggle('picking', !!sel && (S.step === 'board' || S.step === 'teams'));
+  ({ roster: renderRoster, info: renderInfo, attendance: renderAtt, teams: renderTeams, board: renderBoard })[S.step]();
 }
 function go(step) { S.step = step; sel = null; $('#selbar').hidden = true; save(); render(); try { if (location.hash !== '#' + step) history.replaceState(null, '', '#' + step); } catch (e) {} window.scrollTo({ top: 0 }); }
 
@@ -781,53 +804,100 @@ function renderInfo() {
       <div class="row"><h2>TF 명단</h2><span class="spacer"></span><span class="chip">합계 <b>${TF_CATS.reduce((a, [k]) => a + splitNames(S.info.tf[k]).length, 0)}</b></span></div>
       <p class="hint">항목마다 이름을 쉼표로 구분해 적으세요. 템플릿 교사 시트의 TF 칸에서 고른 선생님은 자동으로 들어와요.</p>
       ${TF_CATS.map(([k, l]) => `<div class="fld"><label for="tf-${k}">${l}</label><input class="inp" id="tf-${k}" data-tfc="${k}" value="${esc(S.info.tf[k])}" placeholder="이름, 이름"><div id="tfChips-${k}">${nameChips(S.info.tf[k])}</div></div>`).join('')}
-      <div class="row"><h2>팀</h2><span class="spacer"></span><button class="btn small" type="button" data-act="addTeam">+ 팀장 추가</button></div>
-      <datalist id="tnames">${S.teachers.map(t => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
-      <div style="display:flex;flex-direction:column;gap:10px">${S.info.teams.map(teamRow).join('') || '<p class="hint">아직 팀이 없어요. 팀장을 추가하면 팀원을 적는 칸이 생겨요.</p>'}</div>
       <p class="hint"><span class="chip ok">초록</span> 교사 명단에 있는 이름, <span class="chip warn">노랑</span> 명단에 없는 이름이에요.</p>
+      <div class="row" style="margin-top:6px"><h2>팀</h2><span class="spacer"></span><button class="btn small" type="button" data-go="teams">팀원 구성에서 바꾸기</button></div>
+      <p class="hint">엑셀 교사 시트의 팀 이름으로 묶은 팀이에요. 팀원은 참석 체크 다음 <b>팀원 구성</b> 단계에서 정해요.</p>
+      ${S.info.teams.length ? `<div class="tbl-wrap"><table><thead><tr><th>팀</th><th>팀장</th><th>팀원</th></tr></thead><tbody>${S.info.teams.map(tm => `<tr><td><b>${esc(tm.name || '(이름 없음)')}</b></td><td>${esc(tName(tm.leader)) || '<span class="flag">없음</span>'}</td><td>${tm.members.length ? `<div class="chips">${tm.members.map(id => `<span class="chip">${esc(tName(id))}</span>`).join('')}</div>` : '<span class="mute">–</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">아직 팀이 없어요.</p>'}
     </section>
   </div>
   <div class="row" style="margin-top:16px"><button class="btn" type="button" data-go="roster">← 명단</button><span class="spacer"></span><button class="btn primary" type="button" data-go="attendance">다음: 참석 체크 →</button></div>`;
 }
-function teamRow(t) {
-  return `<div class="team" data-team="${t.id}">
-    <div class="fld"><label for="tn-${t.id}">팀 이름</label><input class="inp" id="tn-${t.id}" data-tf="name" value="${esc(t.name)}" placeholder="예: 레크리에이션팀"></div>
-    <div class="fld"><label for="tl-${t.id}">팀장</label><input class="inp" id="tl-${t.id}" data-tf="leader" list="tnames" value="${esc(t.leader)}" placeholder="팀장 이름"></div>
-    <div style="align-self:end"><button class="btn small ghost danger" type="button" data-delteam="${t.id}">삭제</button></div>
-    <div class="fld members"><label for="tm-${t.id}">팀원 · 쉼표로 구분</label><input class="inp" id="tm-${t.id}" data-tf="members" value="${esc(t.members)}" placeholder="이름, 이름, 이름"><div class="tmChips">${nameChips(t.members)}</div></div>
+/* ================= step 4: teams ================= */
+function renderTeams() {
+  const inTeam = new Set(S.info.teams.flatMap(t => [t.leader, ...t.members]).filter(Boolean));
+  const free = sortedTeachers().filter(t => !inTeam.has(t.id) && attendsAny(t.id));
+  const absentFree = sortedTeachers().filter(t => !inTeam.has(t.id) && !attendsAny(t.id)).length;
+  const tStone = id => { const t = S.teachers.find(x => x.id === id); if (!t) return ''; const html = stone(t, true, '', false); return attendsAny(id) ? html : html.replace('class="pc ', 'class="pc gone ').replace('</span></span>', '</span><span class="rl">불참</span></span>'); };
+  $('#view').innerHTML = `
+  <div class="stack" style="gap:12px">
+    <div class="boardbar">
+      <div class="kpis"><div><b>${S.info.teams.length}</b><span>개 팀</span></div><div><b>${inTeam.size}</b><span>명 배치</span></div><div><b>${free.length}</b><span>명 대기</span></div></div>
+      <span class="spacer"></span>
+      <button class="btn small" type="button" data-act="addTeam">+ 팀 추가</button>
+    </div>
+    <div class="legend"><span>선생님을 끌어 <b>팀장</b> 칸이나 <b>팀원</b> 칸에 놓으세요. 휴대폰은 눌러서 고른 뒤 놓을 칸을 누르면 돼요. 팀장 칸에 다른 사람을 놓으면 원래 팀장은 팀원으로 내려가요.</span></div>
+    <div class="board">
+      <aside class="tray" data-drop="">
+        <header><h3>팀 없는 선생님</h3><span class="hint">${free.length}명</span></header>
+        <div class="body">
+          <div class="stones">${free.map(t => stone(t, true, '', false)).join('') || '<span class="empty">모두 팀에 들어갔어요</span>'}</div>
+          ${absentFree ? `<span class="hint">불참 선생님 ${absentFree}명은 빼고 보여요.</span>` : ''}
+        </div>
+      </aside>
+      <div class="tiles">${S.info.teams.map(tm => `
+        <section class="tile team-tile">
+          <header>
+            <div class="tname"><input id="tmn-${tm.id}" data-teamname="${tm.id}" value="${esc(tm.name)}" placeholder="팀 이름" aria-label="팀 이름"><button class="btn small ghost danger" type="button" data-delteam="${tm.id}">지우기</button></div>
+            <div class="tcount"><span>팀원 <b>${tm.members.length}</b></span>${tm.leader ? '' : '<span class="flag">팀장 없음</span>'}</div>
+          </header>
+          <div class="tslot" data-drop="${tm.id}:leader"><span class="slotlab">팀장</span>${tm.leader ? tStone(tm.leader) : '<span class="empty">여기에 놓으세요</span>'}</div>
+          <div class="sslot" data-drop="${tm.id}:member"><span class="slotlab">팀원</span>${tm.members.map(tStone).join('') || '<span class="empty">여기에 놓으세요</span>'}</div>
+        </section>`).join('') || '<p class="hint">아직 팀이 없어요. <b>+ 팀 추가</b>를 누르세요.</p>'}</div>
+    </div>
+    <div class="row"><button class="btn" type="button" data-go="attendance">← 참석 체크</button><span class="spacer"></span><button class="btn primary" type="button" data-go="board">다음: 반 배치 →</button></div>
   </div>`;
 }
+function teamMove(pid, target) {
+  S.info.teams.forEach(t => { if (t.leader === pid) t.leader = ''; t.members = t.members.filter(x => x !== pid); });
+  if (target) {
+    const [tid, slot] = target.split(':'); const t = S.info.teams.find(x => x.id === tid);
+    if (t) { if (slot === 'leader') { if (t.leader) t.members.unshift(t.leader); t.leader = pid; } else t.members.push(pid); }
+  }
+  sel = null; $('#selbar').hidden = true; save(); render();
+}
+const dropTo = (pid, target) => S.step === 'teams' ? teamMove(pid, target) : moveTo(pid, target);
 
 /* ================= step 3 ================= */
-let attFilter = '';
+let attFilter = '', attTab = 'class';
+const ATT_TABS = [['class', '반사', '반사·보조교사'], ['staff', '스탭', '반을 맡지 않은 선생님'], ['student', '학생', '학년반별']];
 function attRow(p, isT, ds) {
   const a = attOf(p.id);
   const meta = isT ? `${p.role}${p.cls ? ' · ' + clsName(p.cls) : ''}${p.praise && p.role !== '찬양팀' ? ' · 찬양팀' : ''}` : (p.praise ? '찬양팀' : '');
   const days = a.days || [];
   return `<div class="att-row${a.s === 'out' ? ' out' : ''}" data-pid="${p.id}">
-    <div class="who"><i class="dot ${gCode(p.gender)}"></i><span>${esc(p.name)}</span>${meta ? `<small>${esc(meta)}</small>` : ''}</div>
+    <div class="who"><i class="dot ${gCode(p.gender)}"></i><span>${esc(p.name)}</span>${meta ? `<small>${esc(meta)}</small>` : ''}${attEdited(p.id) ? '<span class="edited" title="엑셀 값과 다르게 바꿈">수정</span>' : ''}</div>
     <div class="seg" role="group" aria-label="${esc(p.name)} 참석">${[['in', '참석'], ['part', '부분'], ['out', '불참']].map(([v, l]) => `<button type="button" data-att="${v}" data-v="${v}" class="${a.s === v ? 'on' : ''}" aria-pressed="${a.s === v}">${l}</button>`).join('')}</div>
     <div class="days">${a.s === 'part' ? (ds.length ? ds.map(d => `<button type="button" class="chipbtn${days.includes(d.key) ? ' on' : ''}" data-day="${d.key}" aria-pressed="${days.includes(d.key)}">${d.label} ${d.short}</button>`).join('') + (days.length ? '' : '<span class="hint">참석하는 날을 누르세요</span>') : '<span class="hint">기본 정보에서 기간을 넣으면 날짜를 고를 수 있어요</span>') : ''}</div>
   </div>`;
+}
+const attKey = a => !a || a.s === 'in' ? 'in' : a.s + ':' + (a.days || []).slice().sort().join(',');
+function attEdited(id) { return !!S.attX && attKey(S.attX[id]) !== attKey(S.att[id]); }
+function attNote() {
+  if (!S.attX) return '<p class="hint">엑셀에 참석 칸이 없어서 모두 참석으로 시작해요. 사람마다 눌러서 바꾸세요. <b>부분</b>을 누르면 날짜가 나와서 참석하는 날만 고를 수 있어요.</p>';
+  const v = Object.values(S.attX); const out = v.filter(a => a.s === 'out').length, part = v.filter(a => a.s === 'part').length;
+  const edited = [...S.teachers, ...S.students].filter(p => attEdited(p.id)).length;
+  return `<div class="notice ok row"><span>엑셀 참석 칸을 읽어 자동으로 체크했어요 · 불참 <b>${out}</b>명, 부분참석 <b>${part}</b>명. 여기서 눌러 바꿀 수 있어요.${edited ? ` 엑셀과 다르게 바꾼 사람 <b>${edited}</b>명.` : ''}</span><span class="spacer"></span>${edited ? '<button class="btn small" type="button" data-act="attReset">엑셀 값으로 되돌리기</button>' : ''}</div>`;
 }
 function renderAtt() {
   const ds = dates().filter(d => d.key !== 'all');
   const q = attFilter.trim();
   const match = p => !q || p.name.includes(q) || clsName(p.cls).includes(q) || (p.role || '').includes(q);
-  const T = sortedTeachers().filter(match);
-  const byCls = new Map(); sortedStudents().filter(match).forEach(s => { const k = s.cls || ''; if (!byCls.has(k)) byCls.set(k, []); byCls.get(k).push(s); });
+  const pools = { class: S.teachers.filter(t => CLASS_ROLES.has(t.role)), staff: S.teachers.filter(t => !CLASS_ROLES.has(t.role)), student: S.students };
+  const T = attTab === 'student' ? [] : sortedTeachers().filter(t => pools[attTab].includes(t)).filter(match);
+  const byCls = new Map(); if (attTab === 'student') sortedStudents().filter(match).forEach(s => { const k = s.cls || ''; if (!byCls.has(k)) byCls.set(k, []); byCls.get(k).push(s); });
   const head = (title, list, key) => `<header><h3>${esc(title)}</h3><span class="hint">${list.filter(p => attendsAny(p.id)).length}/${list.length}명 참석</span><span class="spacer"></span><button class="btn small ghost" type="button" data-bulk="in" data-scope="${key}">모두 참석</button><button class="btn small ghost" type="button" data-bulk="out" data-scope="${key}">모두 불참</button></header>`;
   const dayList = ds.length ? ds : [{ key: 'all', label: '전체 일정', short: '' }];
   $('#view').innerHTML = `
   <section class="panel">
     <div class="row"><h2>참석 체크</h2><span class="spacer"></span><input class="inp" style="width:220px" type="search" id="attQ" placeholder="이름·학년반·역할 찾기" value="${esc(attFilter)}" aria-label="찾기"></div>
-    <p class="hint">처음엔 모두 참석이에요. <b>부분</b>을 누르면 날짜가 나와서 참석하는 날만 고를 수 있어요.</p>
+    ${attNote()}
+    <div class="atttabs" role="tablist">${ATT_TABS.map(([k, l, d]) => { const list = pools[k]; const on = list.filter(p => attendsAny(p.id)).length; const ed = list.filter(p => attEdited(p.id)).length; return `<button class="atttab${attTab === k ? ' on' : ''}" role="tab" aria-selected="${attTab === k}" type="button" data-atttab="${k}"><b>${l}</b><span>${d} · 참석 ${on}/${list.length}${ed ? ` · 수정 ${ed}` : ''}</span></button>`; }).join('')}</div>
     <div class="daystat">${dayList.map(d => { const t = S.teachers.filter(p => attends(p.id, d.key)).length, s = S.students.filter(p => attends(p.id, d.key)).length; return `<div>${esc(d.label)} <span class="mute">${esc(d.short)}</span><br>교사 <b>${t}</b> · 학생 <b>${s}</b></div>`; }).join('')}</div>
-    ${T.length ? `<div class="att-group">${head('선생님', T, 'T')}${T.map(p => attRow(p, true, ds)).join('')}</div>` : ''}
+    ${T.length ? `<div class="att-group">${head(attTab === 'class' ? '반사·보조교사' : '스탭·팀장·행정·찬양팀', T, 'T:' + attTab)}${T.map(p => attRow(p, true, ds)).join('')}</div>` : ''}
     ${[...byCls.entries()].sort((a, b) => ko(clsName(a[0]), clsName(b[0]))).map(([k, list]) => `<div class="att-group">${head(k ? clsName(k) + ' 학생' : '학년반 없는 학생', list, 'c:' + k)}${list.map(p => attRow(p, false, ds)).join('')}</div>`).join('')}
     ${!T.length && !byCls.size ? '<p class="hint">찾는 사람이 없어요.</p>' : ''}
   </section>
-  <div class="row" style="margin-top:16px"><button class="btn" type="button" data-go="info">← 기본 정보</button><span class="spacer"></span><button class="btn primary" type="button" data-go="board">다음: 반 배치 →</button></div>`;
+  <div class="row" style="margin-top:16px"><button class="btn" type="button" data-go="info">← 기본 정보</button><span class="spacer"></span><button class="btn primary" type="button" data-go="teams">다음: 팀원 구성 →</button></div>`;
   const qi = $('#attQ'); qi.addEventListener('input', () => { attFilter = qi.value; const pos = qi.selectionStart; renderAtt(); const n = $('#attQ'); n.focus(); n.setSelectionRange(pos, pos); });
 }
 function setAtt(pid, s) { const a = attOf(pid); if (s === 'in') delete S.att[pid]; else S.att[pid] = { s, days: s === 'part' ? (a.days || []) : [] }; }
@@ -955,25 +1025,27 @@ function init() {
     if (act) {
       const a = act.dataset.act;
       if (a === 'template') doDownload('template');
-      else if (a === 'addTeam') { const tm = { id: nid('g'), name: '', leader: '', members: '' }; S.info.teams.push(tm); save(); render(); const el = $('#tl-' + tm.id); if (el) el.focus(); }
+      else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, leader: '', members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id); if (el) { el.focus(); el.select(); } }
+      else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
       else if (a === 'resetDay') { delete S.plans[S.day]; save(); render(); toast('이날 배치를 원래 학년반으로 되돌렸어요.'); }
       else if (a === 'addGroup') { const pl = plan(S.day); const gg = act.dataset.g; const g = { id: nid('x'), name: `새 ${gg}학생반 ${pl.groups.filter(x => x.gender === gg).length + 1}`, gender: gg }; pl.groups.push(g); save(); render(); const el = $('#gn-' + g.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'spread') spread();
       return;
     }
-    const del = t.closest('[data-delteam]'); if (del) { S.info.teams = S.info.teams.filter(x => x.id !== del.dataset.delteam); save(); render(); return; }
+    const del = t.closest('[data-delteam]'); if (del) { S.info.teams = S.info.teams.filter(x => x.id !== del.dataset.delteam); save(); render(); toast('팀을 지웠어요. 팀원은 팀 없는 선생님으로 돌아갔어요.'); return; }
     const un = t.closest('[data-unov]'); if (un) { delete S.info.ov[un.dataset.unov]; save(); render(); return; }
     const dg = t.closest('[data-delgroup]'); if (dg) { const pl = plan(S.day); const id = dg.dataset.delgroup; pl.groups = pl.groups.filter(g => g.id !== id); for (const k in pl.at) if (pl.at[k] === id) pl.at[k] = ''; save(); render(); toast('반을 지웠어요. 그 반에 있던 사람은 대기석으로 갔어요.'); return; }
+    const atb = t.closest('[data-atttab]'); if (atb) { attTab = atb.dataset.atttab; render(); return; }
     const dt = t.closest('[data-dayt]'); if (dt) { S.day = dt.dataset.dayt; sel = null; $('#selbar').hidden = true; save(); render(); return; }
     const at = t.closest('[data-att]'); if (at) { setAtt(at.closest('[data-pid]').dataset.pid, at.dataset.att); save(); render(); return; }
     const dd = t.closest('[data-day]'); if (dd) { const pid = dd.closest('[data-pid]').dataset.pid; const days = new Set(attOf(pid).days || []); days.has(dd.dataset.day) ? days.delete(dd.dataset.day) : days.add(dd.dataset.day); S.att[pid] = { s: 'part', days: [...days].sort() }; save(); render(); return; }
-    const bk = t.closest('[data-bulk]'); if (bk) { const sc = bk.dataset.scope; const list = sc === 'T' ? S.teachers : S.students.filter(s => (s.cls || '') === sc.slice(2)); list.forEach(p => setAtt(p.id, bk.dataset.bulk)); save(); render(); return; }
-    if (S.step === 'board') {
+    const bk = t.closest('[data-bulk]'); if (bk) { const sc = bk.dataset.scope; const list = sc === 'T:class' ? S.teachers.filter(t => CLASS_ROLES.has(t.role)) : sc === 'T:staff' ? S.teachers.filter(t => !CLASS_ROLES.has(t.role)) : S.students.filter(s => (s.cls || '') === sc.slice(2)); list.forEach(p => setAtt(p.id, bk.dataset.bulk)); save(); render(); return; }
+    if (S.step === 'board' || S.step === 'teams') {
       if (t.closest('input')) return;
       const pc = t.closest('.pc[data-pid]');
-      if (pc) { const pid = pc.dataset.pid; if (sel && sel !== pid) moveTo(sel, pc.closest('[data-drop]').dataset.drop); else setSel(sel === pid ? null : pid); return; }
-      const dz = t.closest('[data-drop]'); if (dz && sel) moveTo(sel, dz.dataset.drop);
+      if (pc) { const pid = pc.dataset.pid; if (sel && sel !== pid) dropTo(sel, pc.closest('[data-drop]').dataset.drop); else setSel(sel === pid ? null : pid); return; }
+      const dz = t.closest('[data-drop]'); if (dz && sel) dropTo(sel, dz.dataset.drop);
     }
   });
   document.addEventListener('keydown', e => { const pc = e.target.closest && e.target.closest('.pc[data-pid]'); if (pc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pc.click(); } });
@@ -982,7 +1054,7 @@ function init() {
     if (t.id === 'mTitle') { S.meta.title = t.value; save(); $('#appTitle').textContent = t.value || '수련회 반편성'; return; }
     if (t.dataset.ov) { if (t.value === '') delete S.info.ov[t.dataset.ov]; else S.info.ov[t.dataset.ov] = t.value; save(); return; }
     if (t.dataset.tfc) { S.info.tf[t.dataset.tfc] = t.value; save(); $('#tfChips-' + t.dataset.tfc).innerHTML = nameChips(t.value); return; }
-    if (t.dataset.tf) { const box = t.closest('[data-team]'); const tm = S.info.teams.find(x => x.id === box.dataset.team); if (!tm) return; tm[t.dataset.tf] = t.value; save(); if (t.dataset.tf === 'members') box.querySelector('.tmChips').innerHTML = nameChips(t.value); return; }
+    if (t.dataset.teamname) { const tm = S.info.teams.find(x => x.id === t.dataset.teamname); if (tm) { tm.name = t.value; save(); } return; }
     if (t.dataset.gname) { const g = plan(S.day).groups.find(x => x.id === t.dataset.gname); if (g) { g.name = t.value; save(); } }
   });
   document.addEventListener('change', e => {
@@ -992,7 +1064,7 @@ function init() {
   });
 
   document.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'touch' || e.button !== 0 || S.step !== 'board') return;
+    if (e.pointerType === 'touch' || e.button !== 0 || (S.step !== 'board' && S.step !== 'teams')) return;
     const pc = e.target.closest('.pc[data-pid]'); if (!pc) return;
     const r = pc.getBoundingClientRect();
     drag = { pid: pc.dataset.pid, el: pc, x0: e.clientX, y0: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, started: false, ghost: null, over: null };
@@ -1018,7 +1090,7 @@ function init() {
     if (!d.started) return;
     justDragged = true; setTimeout(() => { justDragged = false; }, 0);
     markNoDrop(null); d.ghost.remove(); d.el.classList.remove('lift'); if (d.over) d.over.classList.remove('over');
-    if (d.over) moveTo(d.pid, d.over.dataset.drop);
+    if (d.over) dropTo(d.pid, d.over.dataset.drop);
   });
   document.addEventListener('pointercancel', () => { if (drag && drag.ghost) { drag.ghost.remove(); drag.el.classList.remove('lift'); } drag = null; document.body.style.cursor = ''; });
 }
