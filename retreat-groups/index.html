@@ -174,8 +174,10 @@ textarea.inp { resize: vertical; min-height: 60px; line-height: 1.5; }
 .tray .body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 80px; }
 .tray .lab { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
 .stones { display: flex; flex-wrap: wrap; gap: 6px; }
+.gsecs { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; align-items: start; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-width: 0; box-shadow: var(--shadow); transition: border-color .12s, box-shadow .12s; }
+.tile.nodrop { opacity: .35; }
 .tile.noteacher { border-color: var(--bad); }
 [data-drop].over { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
 body.picking [data-drop] { cursor: pointer; border-style: dashed; border-color: var(--accent); }
@@ -188,6 +190,17 @@ body.picking [data-drop] { cursor: pointer; border-style: dashed; border-color: 
 .tcount b { font-family: var(--f-num); font-weight: 500; color: var(--ink); }
 .flag { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; background: var(--bad-soft); color: var(--bad); }
 .flag.soft { background: var(--warn-soft); color: var(--warn); }
+.badge { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; white-space: nowrap; background: var(--sunken); color: var(--muted); }
+.badge.m { background: var(--male-soft); color: var(--male); }
+.badge.f { background: var(--female-soft); color: var(--female); }
+.gsec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gsec + .gsec { margin-top: 6px; }
+.gsec > h3 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.gsec > h3 .bar { width: 4px; height: 16px; border-radius: 2px; background: var(--muted); }
+.gsec.m > h3 .bar { background: var(--male); } .gsec.f > h3 .bar { background: var(--female); }
+.gsec > h3 span { font-weight: 400; font-size: 12.5px; color: var(--muted); }
+.tile.m > header { box-shadow: inset 0 3px 0 var(--male); border-radius: 12px 12px 0 0; }
+.tile.f > header { box-shadow: inset 0 3px 0 var(--female); border-radius: 12px 12px 0 0; }
 .tslot { padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px dashed var(--line); min-height: 46px; align-items: center; }
 .tslot .empty { font-size: 12px; color: var(--bad); }
 .sslot { padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 56px; align-content: flex-start; }
@@ -269,7 +282,7 @@ let S = blank();
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }, 200); }
 function load() {
-  try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); S.info = Object.assign(blank().info, d.info || {}); return true; } catch (e) { return false; }
+  try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); S.info = Object.assign(blank().info, d.info || {}); ensureGenders(S); return true; } catch (e) { return false; }
 }
 let uid = 0; const nid = p => p + Date.now().toString(36) + (uid++).toString(36);
 
@@ -278,6 +291,26 @@ const normCls = s => String(s || '').replace(/\s+/g, '');
 const clsById = id => S.classes.find(c => c.id === id);
 const clsName = id => (clsById(id) || {}).name || '';
 const gCode = g => g === '남' ? 'm' : g === '여' ? 'f' : '';
+const gLabel = g => g === '남' ? '남학생반' : g === '여' ? '여학생반' : '구분 없음';
+// 반은 반드시 남녀 따로: 학생 성별로 반의 구분을 정하고, 학생이 없으면 반사 성별을 따른다.
+function deriveGender(st, c) {
+  const ss = st.students.filter(s => s.cls === c.id);
+  const m = ss.filter(s => s.gender === '남').length, f = ss.filter(s => s.gender === '여').length;
+  if (m || f) return m >= f ? '남' : '여';
+  const t = st.teachers.find(t => t.cls === c.id && t.role === '반사') || st.teachers.find(t => t.cls === c.id);
+  return t ? t.gender : '';
+}
+function ensureGenders(st) {
+  st.classes.forEach(c => { if (c.gender !== '남' && c.gender !== '여') c.gender = deriveGender(st, c); });
+  Object.values(st.plans || {}).forEach(pl => pl.groups.forEach(g => {
+    if (g.gender === '남' || g.gender === '여') return;
+    const home = st.classes.find(c => c.id === g.id);
+    if (home) { g.gender = home.gender; return; }
+    const ss = st.students.filter(s => pl.at[s.id] === g.id);
+    const m = ss.filter(s => s.gender === '남').length, f = ss.filter(s => s.gender === '여').length;
+    g.gender = m || f ? (m >= f ? '남' : '여') : '';
+  }));
+}
 function normGender(v) { v = String(v || '').trim().toLowerCase(); if (/^(남|남자|남성|m|male|형제)$/.test(v)) return '남'; if (/^(여|여자|여성|f|female|자매)$/.test(v)) return '여'; return ''; }
 function normRole(v) {
   v = String(v || '').replace(/\s+/g, ''); if (!v) return '기타';
@@ -318,15 +351,15 @@ function sample() {
   const nm = male => { let n; do n = pick(sur) + pick(male ? mg : fg); while (used.has(n)); used.add(n); return n; };
   const st = blank(); st.sample = true;
   st.meta = { title: '2027 중등부 겨울수련회', start: '2027-01-08', end: '2027-01-10' };
-  ['중1-1반', '중1-2반', '중2-1반', '중2-2반', '중3-1반', '중3-2반'].forEach((n, i) => st.classes.push({ id: 'c' + i, name: n }));
+  const sizes = [9, 6, 11, 7, 5, 10, 8, 4];
+  ['중1 남1반', '중1 여1반', '중1 여2반', '중2 남1반', '중2 여1반', '중3 남1반', '중3 남2반', '중3 여1반'].forEach((n, i) => st.classes.push({ id: 'c' + i, name: n, gender: n.includes('남') ? '남' : '여' }));
   const T = (name, gender, role, cls = '', team = '', praise = false, tf = false) => { const t = { id: nid('t'), name, gender, role, cls, team, praise, tf, note: '' }; st.teachers.push(t); return t; };
   const mains = [];
   st.classes.forEach((c, i) => {
-    const male = i % 2 === 0;
-    mains.push(T(nm(male), male ? '남' : '여', '반사', c.id, '', i === 2, i === 0));
-    if (i % 2 === 1) T(nm(!male), !male ? '남' : '여', '보조교사', c.id);
-    const n = 7 + Math.floor(r() * 4);
-    for (let k = 0; k < n; k++) { const m = r() < 0.5; st.students.push({ id: nid('s'), name: nm(m), gender: m ? '남' : '여', cls: c.id, note: '' }); }
+    const male = c.gender === '남';
+    mains.push(T(nm(male), c.gender, '반사', c.id, '', i === 2, i === 0));
+    if (sizes[i] >= 9) T(nm(male), c.gender, '보조교사', c.id);
+    for (let k = 0; k < sizes[i]; k++) st.students.push({ id: nid('s'), name: nm(male), gender: c.gender, cls: c.id, note: '' });
   });
   T(nm(true), '남', '팀장', '', '레크리에이션팀', false, true);
   T(nm(false), '여', '팀장', '', '식사·간식팀', false, true);
@@ -383,7 +416,8 @@ async function buildTemplate() {
    ['   · 역할: 반사 / 보조교사 / 스탭 / 팀장 / 행정 / 찬양팀 / 기타'],
    ['   · 반사·보조교사는 [담당 학년반]을 꼭 적어 주세요. 학생 시트의 학년반과 같은 이름이어야 합니다(띄어쓰기는 무시).'],
    ['   · 팀장과 팀원은 [팀 이름]을 같게 적으면 한 팀으로 묶입니다.'],
-   ['3. [학생] 시트에 학년반, 이름, 성별을 적습니다.'],
+   ['3. [학생] 시트에 학년반, 이름, 성별을 적습니다. 반은 남녀 따로라서 한 학년반에는 한 성별만 적습니다(예: 중1 남1반, 중1 여1반).'],
+   ['   · 반마다 인원은 달라도 됩니다.'],
    ['4. "예)"로 시작하는 줄은 예시라서 올릴 때 무시됩니다. 지우고 쓰셔도 됩니다.'],
    ['5. 다 채운 파일을 반편성 화면의 [명단 올리기]에 올립니다.']].forEach(([t, b], i) => { const c = g.getCell('A' + (i + 1)); c.value = t; if (b) c.font = { bold: true, size: 14 }; });
 
@@ -393,12 +427,12 @@ async function buildTemplate() {
   [2, 3, 4].forEach(r => { b.getCell('C' + r).font = EX_FONT; });
 
   const t = wb.addWorksheet('교사'); styleSheet(t, [['이름', 14], ['성별', 8], ['역할', 12], ['담당 학년반', 14], ['팀 이름', 18], ['찬양팀', 9], ['TF', 7], ['메모', 28]]);
-  [['예) 김은혜', '여', '반사', '중1-1반', '', '', 'O', ''], ['예) 박성민', '남', '보조교사', '중1-1반', '', '', '', ''], ['예) 이준호', '남', '팀장', '', '레크리에이션팀', '', 'O', ''], ['예) 최다은', '여', '스탭', '', '레크리에이션팀', 'O', '', '']]
+  [['예) 김은혜', '여', '반사', '중1 여1반', '', '', 'O', ''], ['예) 박성민', '남', '보조교사', '중1 남1반', '', '', '', ''], ['예) 이준호', '남', '팀장', '', '레크리에이션팀', '', 'O', ''], ['예) 최다은', '여', '스탭', '', '레크리에이션팀', 'O', '', '']]
     .forEach(r => { t.addRow(r).font = EX_FONT; });
   listValid(t, 'B', 2, 400, ['남', '여']); listValid(t, 'C', 2, 400, ROLES); listValid(t, 'F', 2, 400, ['O']); listValid(t, 'G', 2, 400, ['O']);
 
   const s = wb.addWorksheet('학생'); styleSheet(s, [['학년반', 12], ['이름', 14], ['성별', 8], ['메모', 28]]);
-  [['중1-1반', '예) 정하준', '남', ''], ['중1-1반', '예) 윤서연', '여', '']].forEach(r => { s.addRow(r).font = EX_FONT; });
+  [['중1 남1반', '예) 정하준', '남', ''], ['중1 여1반', '예) 윤서연', '여', '']].forEach(r => { s.addRow(r).font = EX_FONT; });
   listValid(s, 'C', 2, 1000, ['남', '여']);
   return wb.xlsx.writeBuffer();
 }
@@ -457,7 +491,12 @@ async function importFile(file) {
   });
   if (!st.teachers.length && !st.students.length) throw new Error('empty');
   st.classes.sort((a, b) => ko(a.name, b.name));
-  st.classes.forEach(c => { if (!st.teachers.some(t => t.cls === c.id && t.role === '반사')) issues.push(`${c.name}: 반사가 지정되지 않았어요.`); });
+  st.classes.forEach(c => {
+    if (!st.teachers.some(t => t.cls === c.id && t.role === '반사')) issues.push(`${c.name}: 반사가 지정되지 않았어요.`);
+    const ss = st.students.filter(s => s.cls === c.id);
+    const m = ss.filter(s => s.gender === '남').length, f = ss.filter(s => s.gender === '여').length;
+    if (m && f) issues.push(`${c.name}: 남학생 ${m}명, 여학생 ${f}명이 섞여 있어요. 반은 남녀 따로라서 ${m >= f ? '남' : '여'}학생반으로 보고, 다른 성별 학생은 배치판에서 옮겨 주세요.`);
+  });
   autoInfo(st);
   const plan = find(/^배치/);
   if (plan) {
@@ -474,6 +513,7 @@ async function importFile(file) {
     });
     Object.values(st.plans).forEach(pl => st.classes.forEach(c => { if (!pl.groups.some(g => g.id === c.id)) pl.groups.push({ id: c.id, name: c.name }); }));
   }
+  ensureGenders(st);
   return { st, issues };
 }
 async function buildData() {
@@ -502,7 +542,7 @@ async function buildData() {
     const sh = wb.addWorksheet(`${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 31));
     const cols = L.groups.slice();
     if (L.tray.teachers.length || L.tray.students.length) cols.push({ g: { id: '', name: '대기석' }, teachers: L.tray.teachers, students: L.tray.students });
-    sh.columns = cols.map(x => ({ header: x.g.name, width: 18 }));
+    sh.columns = cols.map(x => ({ header: x.g.name + (x.g.gender && !x.g.name.includes(x.g.gender) ? ` (${x.g.gender})` : ''), width: 18 }));
     const h = sh.getRow(1); h.font = { bold: true, color: { argb: 'FFFFFFFF' } }; h.fill = HEAD_FILL; sh.views = [{ state: 'frozen', ySplit: 2 }];
     sh.addRow(cols.map(x => x.teachers.map(p => p.name + (p.role === '반사' ? '' : `(${p.role})`)).join(', ') || '선생님 없음')).font = { bold: true };
     const max = Math.max(0, ...cols.map(x => x.students.length));
@@ -541,7 +581,7 @@ function counts() {
   return out;
 }
 function plan(day) {
-  if (!S.plans[day]) S.plans[day] = { groups: S.classes.map(c => ({ id: c.id, name: c.name })), at: {} };
+  if (!S.plans[day]) S.plans[day] = { groups: S.classes.map(c => ({ id: c.id, name: c.name, gender: c.gender || '' })), at: {} };
   return S.plans[day];
 }
 function layout(day) {
@@ -580,8 +620,9 @@ function renderRoster() {
   const classes = S.classes.map(c => {
     const ts = S.teachers.filter(t => t.cls === c.id);
     const ss = S.students.filter(s => s.cls === c.id);
-    return { c, main: ts.filter(t => t.role === '반사'), sub: ts.filter(t => t.role !== '반사'), m: ss.filter(s => s.gender === '남').length, f: ss.filter(s => s.gender === '여').length, n: ss.length };
+    return { c, main: ts.filter(t => t.role === '반사'), sub: ts.filter(t => t.role !== '반사'), mixed: ss.some(s => s.gender && s.gender !== c.gender), n: ss.length };
   });
+  const gs = g => classes.filter(x => x.c.gender === g);
   const roleCount = ROLES.map(r => [r, S.teachers.filter(t => t.role === r).length]).filter(x => x[1]);
   const noCls = S.students.filter(s => !s.cls);
   $('#view').innerHTML = `
@@ -598,12 +639,12 @@ function renderRoster() {
     ${S.classes.length || S.teachers.length ? `
     <section class="panel">
       <div class="row"><h2>올라온 명단</h2><span class="spacer"></span>
-        <div class="chips"><span class="chip">학년반 <b>${S.classes.length}</b></span><span class="chip">교사 <b>${S.teachers.length}</b></span><span class="chip">학생 <b>${S.students.length}</b></span>${roleCount.map(([r, n]) => `<span class="chip">${r} <b>${n}</b></span>`).join('')}</div>
+        <div class="chips"><span class="chip">남학생반 <b>${gs('남').length}</b></span><span class="chip">여학생반 <b>${gs('여').length}</b></span><span class="chip">교사 <b>${S.teachers.length}</b></span><span class="chip">학생 <b>${S.students.length}</b></span>${roleCount.map(([r, n]) => `<span class="chip">${r} <b>${n}</b></span>`).join('')}</div>
       </div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>학년반</th><th>반사</th><th>보조교사</th><th>학생</th><th>남 / 여</th></tr></thead>
-        <tbody>${classes.map(x => `<tr><td><b>${esc(x.c.name)}</b></td><td>${x.main.length ? x.main.map(t => esc(t.name)).join(', ') : '<span class="flag">없음</span>'}</td><td>${x.sub.map(t => esc(t.name)).join(', ') || '<span class="mute">–</span>'}</td><td class="num">${x.n}</td><td class="num">${x.m} / ${x.f}</td></tr>`).join('')}
-        ${noCls.length ? `<tr><td><span class="flag soft">학년반 없음</span></td><td colspan="2" class="mute">대기석에서 시작해요</td><td class="num">${noCls.length}</td><td></td></tr>` : ''}</tbody>
+        <thead><tr><th>학년반</th><th>구분</th><th>반사</th><th>보조교사</th><th>학생</th></tr></thead>
+        <tbody>${['남', '여', ''].flatMap(g => classes.filter(x => (x.c.gender || '') === g)).map(x => `<tr><td><b>${esc(x.c.name)}</b></td><td><span class="badge ${gCode(x.c.gender)}">${gLabel(x.c.gender)}</span>${x.mixed ? ' <span class="flag soft">성별 섞임</span>' : ''}</td><td>${x.main.length ? x.main.map(t => esc(t.name)).join(', ') : '<span class="flag">없음</span>'}</td><td>${x.sub.map(t => esc(t.name)).join(', ') || '<span class="mute">–</span>'}</td><td class="num">${x.n}명</td></tr>`).join('')}
+        ${noCls.length ? `<tr><td><span class="flag soft">학년반 없음</span></td><td></td><td colspan="2" class="mute">대기석에서 시작해요</td><td class="num">${noCls.length}명</td></tr>` : ''}</tbody>
       </table></div>
       <h3>반을 맡지 않은 선생님</h3>
       <div class="chips">${sortedTeachers().filter(t => !CLASS_ROLES.has(t.role)).map(t => `<span class="chip"><span class="mute">${esc(t.role)}</span> ${esc(t.name)}</span>`).join('') || '<span class="hint">없음</span>'}</div>
@@ -741,10 +782,11 @@ function renderBoard() {
       <span class="spacer"></span>
       ${idx > 0 ? `<button class="btn small" type="button" data-act="copyPrev">${esc(ds[idx - 1].label)} 배치 가져오기</button>` : ''}
       ${noT.length ? '<button class="btn small" type="button" data-act="spread">선생님 없는 반 학생 나누기</button>' : ''}
-      <button class="btn small" type="button" data-act="addGroup">+ 반 추가</button>
+      <button class="btn small" type="button" data-act="addGroup" data-g="남">+ 남학생반</button>
+      <button class="btn small" type="button" data-act="addGroup" data-g="여">+ 여학생반</button>
       <button class="btn small ghost" type="button" data-act="resetDay">원래 학년반으로</button>
     </div>
-    <div class="legend">${stone({ id: '', name: '선생님', gender: '', role: '반사' }, true, '', false, true)}${stone({ id: '', name: '남학생', gender: '남' }, false, '', false, true)}${stone({ id: '', name: '여학생', gender: '여' }, false, '', false, true)}${stone({ id: '', name: '불참 선생님', gender: '', role: '반사' }, true, '', true, true)}<span>이름을 끌어 다른 반에 놓으세요. 휴대폰은 눌러서 고른 뒤 옮길 반을 누르면 돼요. 오른쪽 작은 글씨는 원래 학년반이에요.</span></div>
+    <div class="legend">${stone({ id: '', name: '선생님', gender: '', role: '반사' }, true, '', false, true)}${stone({ id: '', name: '남학생', gender: '남' }, false, '', false, true)}${stone({ id: '', name: '여학생', gender: '여' }, false, '', false, true)}${stone({ id: '', name: '불참 선생님', gender: '', role: '반사' }, true, '', true, true)}<span>이름을 끌어 다른 반에 놓으세요. 학생은 같은 성별 반으로만 옮겨져요. 휴대폰은 눌러서 고른 뒤 옮길 반을 누르면 돼요. 오른쪽 작은 글씨는 원래 학년반이에요.</span></div>
     <div class="board" id="board">
       <aside class="tray" data-drop="">
         <header><h3>대기석</h3><span class="hint">${L.tray.teachers.length + L.tray.students.length}명</span></header>
@@ -754,7 +796,8 @@ function renderBoard() {
           ${L.tray.students.length ? `<div class="lab">학생</div><div class="stones">${L.tray.students.map(p => stone(p, false, '', false)).join('')}</div>` : ''}
         </div>
       </aside>
-      <div class="tiles">${L.groups.map(tile).join('') || '<p class="hint">반이 없어요. 명단을 올리거나 반을 추가하세요.</p>'}</div>
+      <div class="gsecs">${['남', '여', ''].map(g => { const list = L.groups.filter(x => (x.g.gender || '') === g); if (!list.length) return ''; const n = list.reduce((a, x) => a + x.students.length, 0);
+        return `<section class="gsec ${gCode(g)}"><h3><i class="bar"></i>${g ? gLabel(g) : '구분 없는 반'}<span>${list.length}개 반 · 학생 ${n}명</span></h3><div class="tiles">${list.map(tile).join('')}</div></section>`; }).join('') || '<p class="hint">반이 없어요. 명단을 올리거나 반을 추가하세요.</p>'}</div>
     </div>
   </div>`;
 }
@@ -762,36 +805,45 @@ function tile(x) {
   const m = x.students.filter(s => s.gender === '남').length, f = x.students.filter(s => s.gender === '여').length;
   const noT = !x.teachers.length && x.students.length;
   const canDel = !S.classes.some(c => c.id === x.g.id);
-  return `<section class="tile${noT ? ' noteacher' : ''}" data-drop="${x.g.id}">
+  return `<section data-g="${esc(x.g.gender || '')}" class="tile ${gCode(x.g.gender)}${noT ? ' noteacher' : ''}" data-drop="${x.g.id}">
     <header>
       <div class="tname"><input id="gn-${x.g.id}" data-gname="${x.g.id}" value="${esc(x.g.name)}" aria-label="반 이름">${canDel ? `<button class="btn small ghost danger" type="button" data-delgroup="${x.g.id}">지우기</button>` : ''}</div>
-      <div class="tcount"><span>교사 <b>${x.teachers.length}</b></span><span>학생 <b>${x.students.length}</b></span><span><i class="dot m"></i> ${m}&nbsp; <i class="dot f"></i> ${f}</span>${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
+      <div class="tcount"><span>교사 <b>${x.teachers.length}</b></span><span>학생 <b>${x.students.length}</b></span>${x.g.gender ? `<span class="badge ${gCode(x.g.gender)}">${x.g.gender}</span>` : ''}${m && f ? '<span class="flag soft">남녀 섞임</span>' : ''}${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
     </header>
     <div class="tslot">${x.teachers.map(p => stone(p, true, x.g.id, false)).join('')}${x.offTeachers.map(p => stone(p, true, x.g.id, true)).join('')}${!x.teachers.length && !x.offTeachers.length ? '<span class="empty">선생님을 끌어 놓으세요</span>' : ''}</div>
     <div class="sslot">${x.students.map(p => stone(p, false, x.g.id, false)).join('') || '<span class="empty">학생 없음</span>'}</div>
     ${x.offStudents.length ? `<div class="absent">이날 불참 ${x.offStudents.length}명 · ${x.offStudents.map(p => esc(p.name)).join(', ')}</div>` : ''}
   </section>`;
 }
-function moveTo(pid, gid) { plan(S.day).at[pid] = gid; sel = null; $('#selbar').hidden = true; save(); render(); }
-function gradeKey(name) { return String(name).replace(/\s+/g, '').replace(/[-–_.]?\d+반$/, '').replace(/반$/, ''); }
+function markNoDrop(pid) {
+  const st = pid && S.students.find(x => x.id === pid);
+  document.querySelectorAll('.tile[data-g]').forEach(t => t.classList.toggle('nodrop', !!(st && st.gender && t.dataset.g && t.dataset.g !== st.gender)));
+}
+function moveTo(pid, gid) {
+  const g = plan(S.day).groups.find(x => x.id === gid); const st = S.students.find(x => x.id === pid);
+  if (g && st && g.gender && st.gender && g.gender !== st.gender) { toast(`${st.name}은(는) ${st.gender}학생이라 ${g.name}(${gLabel(g.gender)})에 넣을 수 없어요.`); sel = null; $('#selbar').hidden = true; render(); return; }
+  plan(S.day).at[pid] = gid; sel = null; $('#selbar').hidden = true; save(); render(); }
+function gradeKey(name) { return String(name).replace(/\s+/g, '').replace(/[남여]/g, '').replace(/[-–_.]?\d+반$/, '').replace(/반$/, ''); }
 function spread() {
   const L = layout(S.day); const pl = plan(S.day);
-  const withT = L.groups.filter(x => x.teachers.length);
+  const withT = L.groups.filter(x => x.teachers.length && x.g.gender);
   if (!withT.length) { toast('선생님이 있는 반이 없어 나눌 수 없어요.'); return; }
   const size = new Map(withT.map(x => [x.g.id, x.students.length]));
-  let moved = 0;
+  let moved = 0, left = 0;
   L.groups.filter(x => !x.teachers.length && x.students.length).forEach(x => {
-    const same = withT.filter(y => gradeKey(y.g.name) === gradeKey(x.g.name));
-    const pool = same.length ? same : withT;
+    const sex = withT.filter(y => y.g.gender === x.g.gender);
+    if (!sex.length) { left += x.students.length; return; }
+    const same = sex.filter(y => gradeKey(y.g.name) === gradeKey(x.g.name));
+    const pool = same.length ? same : sex;
     x.students.forEach(s => { const tgt = pool.slice().sort((a, b) => size.get(a.g.id) - size.get(b.g.id))[0]; pl.at[s.id] = tgt.g.id; size.set(tgt.g.id, size.get(tgt.g.id) + 1); moved++; });
   });
-  save(); render(); toast(`학생 ${moved}명을 선생님 있는 반으로 나눴어요. 같은 학년 반부터 채웠어요.`);
+  save(); render(); toast(`학생 ${moved}명을 같은 성별의 선생님 있는 반으로 나눴어요. 같은 학년 반부터, 인원이 적은 반부터 채웠어요.${left ? ` ${left}명은 옮길 같은 성별 반이 없어 그대로 뒀어요.` : ''}`);
 }
 
 /* ================= interactions ================= */
 let sel = null;
 function setSel(pid) {
-  sel = pid; render();
+  sel = pid; render(); markNoDrop(pid);
   $('#selbar').hidden = !pid;
   if (pid) { const p = [...S.teachers, ...S.students].find(x => x.id === pid); $('#selText').textContent = `${p ? p.name : ''} 선택됨 · 옮길 반이나 대기석을 누르세요`; }
 }
@@ -832,7 +884,7 @@ function init() {
       else if (a === 'addTeam') { const tm = { id: nid('g'), name: '', leader: '', members: '' }; S.info.teams.push(tm); save(); render(); const el = $('#tl-' + tm.id); if (el) el.focus(); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
       else if (a === 'resetDay') { delete S.plans[S.day]; save(); render(); toast('이날 배치를 원래 학년반으로 되돌렸어요.'); }
-      else if (a === 'addGroup') { const pl = plan(S.day); const g = { id: nid('x'), name: `새 반 ${pl.groups.length + 1}` }; pl.groups.push(g); save(); render(); const el = $('#gn-' + g.id); if (el) { el.focus(); el.select(); } }
+      else if (a === 'addGroup') { const pl = plan(S.day); const gg = act.dataset.g; const g = { id: nid('x'), name: `새 ${gg}학생반 ${pl.groups.filter(x => x.gender === gg).length + 1}`, gender: gg }; pl.groups.push(g); save(); render(); const el = $('#gn-' + g.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'spread') spread();
       return;
     }
@@ -877,10 +929,12 @@ function init() {
       if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
       drag.started = true; drag.ghost = drag.el.cloneNode(true); drag.ghost.classList.add("dragghost"); drag.ghost.classList.remove('sel'); document.body.appendChild(drag.ghost); drag.el.classList.add('lift');
       document.body.style.cursor = 'grabbing';
+      markNoDrop(drag.pid);
     }
     e.preventDefault();
     drag.ghost.style.left = (e.clientX - drag.dx) + 'px'; drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
-    const under = document.elementFromPoint(e.clientX, e.clientY); const dz = under && under.closest('[data-drop]');
+    const under = document.elementFromPoint(e.clientX, e.clientY); let dz = under && under.closest('[data-drop]');
+    if (dz && dz.classList.contains('nodrop')) dz = null;
     if (dz !== drag.over) { if (drag.over) drag.over.classList.remove('over'); drag.over = dz; if (dz) dz.classList.add('over'); }
     if (e.clientY < 50) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 50) window.scrollBy(0, 14);
   });
@@ -889,7 +943,7 @@ function init() {
     const d = drag; drag = null; document.body.style.cursor = '';
     if (!d.started) return;
     justDragged = true; setTimeout(() => { justDragged = false; }, 0);
-    d.ghost.remove(); d.el.classList.remove('lift'); if (d.over) d.over.classList.remove('over');
+    markNoDrop(null); d.ghost.remove(); d.el.classList.remove('lift'); if (d.over) d.over.classList.remove('over');
     if (d.over) moveTo(d.pid, d.over.dataset.drop);
   });
   document.addEventListener('pointercancel', () => { if (drag && drag.ghost) { drag.ghost.remove(); drag.el.classList.remove('lift'); } drag = null; document.body.style.cursor = ''; });
