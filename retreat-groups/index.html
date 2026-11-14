@@ -1,0 +1,905 @@
+<title>수련회 반편성</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: left control rail (명단 → 설정 → 규칙) + right board of 반 cards; stacks to one column on phones. */
+:root {
+  --bg: #eef1ef;
+  --surface: #ffffff;
+  --sunken: #f5f7f6;
+  --ink: #17211d;
+  --muted: #5a6862;
+  --line: #d9e0dc;
+  --accent: #1f6b52;
+  --accent-soft: #e2efe9;
+  --accent-ink: #ffffff;
+  --male: #2c66c4;
+  --male-soft: #e3ecfa;
+  --female: #c43f72;
+  --female-soft: #f9e4ec;
+  --warn: #9a6210;
+  --warn-soft: #fbf0dc;
+  --bad: #b8322f;
+  --bad-soft: #fbe5e4;
+  --dot-l: 52%;
+  --shadow: 0 1px 2px rgba(20, 40, 30, .06), 0 2px 8px rgba(20, 40, 30, .05);
+  --f-display: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1412; --surface: #161e1b; --sunken: #111816; --ink: #e4ebe7; --muted: #92a199; --line: #26322d;
+    --accent: #52b48e; --accent-soft: #1a2f27; --accent-ink: #0c1411;
+    --male: #79a6ee; --male-soft: #1b2638; --female: #ee89b0; --female-soft: #35202a;
+    --warn: #e2b062; --warn-soft: #2f2615; --bad: #f08a86; --bad-soft: #351c1b; --dot-l: 64%;
+    --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1412; --surface: #161e1b; --sunken: #111816; --ink: #e4ebe7; --muted: #92a199; --line: #26322d;
+  --accent: #52b48e; --accent-soft: #1a2f27; --accent-ink: #0c1411;
+  --male: #79a6ee; --male-soft: #1b2638; --female: #ee89b0; --female-soft: #35202a;
+  --warn: #e2b062; --warn-soft: #2f2615; --bad: #f08a86; --bad-soft: #351c1b; --dot-l: 64%;
+  --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 96px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+.wrap { max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+header.top h1 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+header.top p { margin: 4px 0 0; color: var(--muted); }
+.top-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.layout { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.rail { display: flex; flex-direction: column; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel-h { display: flex; align-items: center; gap: 10px; }
+.step { font-family: var(--f-num); font-size: 12px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.panel-h h2 { font-size: 15px; font-weight: 600; }
+.panel-h .aside { margin-left: auto; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+.hint code { font-family: var(--f-body); background: var(--sunken); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); padding: 10px 12px; resize: vertical; font-size: 13px; line-height: 1.55; tab-size: 16; }
+textarea#roster { min-height: 200px; white-space: pre; overflow-x: auto; }
+textarea.rules { min-height: 64px; }
+textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.big { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); border-color: var(--line); }
+.btn svg { width: 15px; height: 15px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.stat { background: var(--sunken); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; }
+.stat b { font-family: var(--f-num); font-weight: 500; }
+.notice { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; background: var(--warn-soft); color: var(--warn); }
+.notice.sample { background: var(--accent-soft); color: var(--accent); }
+.issues { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn); max-height: 120px; overflow: auto; }
+
+.field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; }
+.field > label, .field > .lab { color: var(--muted); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); flex-wrap: wrap; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg input:checked + label { background: var(--surface); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); border-radius: 7px; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); }
+.num { width: 76px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--sunken); font-family: var(--f-num); }
+.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.checks label { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+.checks input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* Board */
+.board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.summary .kpi { display: flex; align-items: baseline; gap: 6px; }
+.summary .kpi b { font-family: var(--f-num); font-size: 18px; font-weight: 500; }
+.summary .kpi span { color: var(--muted); font-size: 12.5px; }
+.summary .spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; }
+.pill.ok { background: var(--accent-soft); color: var(--accent); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+.groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; }
+.gcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-width: 0; transition: border-color .12s, box-shadow .12s; }
+.gcard.drop { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gcard.target { cursor: pointer; border-style: dashed; border-color: var(--accent); }
+.gcard.unassigned { border-style: dashed; }
+.ghead { padding: 10px 12px 8px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.gtitle { display: flex; align-items: center; gap: 8px; }
+.gtitle input { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 2px 6px; margin-left: -6px; font-family: var(--f-display); font-weight: 700; font-size: 16px; }
+.gtitle input:hover { border-color: var(--line); }
+.gcount { font-family: var(--f-num); font-size: 13px; color: var(--muted); white-space: nowrap; }
+.gmeta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); align-items: center; }
+.gbar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: var(--sunken); }
+.gbar i { display: block; height: 100%; }
+.gbar .m { background: var(--male); }
+.gbar .f { background: var(--female); }
+.badge { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; }
+.badge.m { background: var(--male-soft); color: var(--male); }
+.badge.f { background: var(--female-soft); color: var(--female); }
+.gwarn { display: flex; flex-wrap: wrap; gap: 4px; }
+.gwarn span { font-size: 11.5px; border-radius: 4px; padding: 1px 6px; background: var(--warn-soft); color: var(--warn); }
+.gwarn span.bad { background: var(--bad-soft); color: var(--bad); }
+.members { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 1px; min-height: 40px; }
+.person { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: grab; user-select: none; }
+.person:hover { background: var(--sunken); }
+.person.sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.person.dragging { opacity: .4; }
+.person.staff .pname { font-weight: 600; }
+.sex { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.sex.m { background: var(--male); }
+.sex.f { background: var(--female); }
+.pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.role { font-size: 10.5px; font-weight: 600; border: 1px solid var(--accent); color: var(--accent); border-radius: 3px; padding: 0 4px; }
+.ptags { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.ptags .grade { font-family: var(--f-num); font-size: 11px; background: var(--sunken); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--ink); }
+.cdot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; background: hsl(var(--h) 55% var(--dot-l)); }
+.lock { border: 0; background: transparent; padding: 2px; border-radius: 4px; cursor: pointer; color: var(--line); display: grid; place-items: center; }
+.lock svg { width: 14px; height: 14px; }
+.person:hover .lock { color: var(--muted); }
+.lock.on, .person:hover .lock.on { color: var(--accent); }
+.lock:focus-visible { outline: 2px solid var(--accent); }
+.empty-g { color: var(--muted); font-size: 12px; padding: 8px; text-align: center; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+
+.export { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.export textarea { min-height: 140px; font-size: 12.5px; white-space: pre; overflow: auto; }
+
+.empty-board { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 40px 20px; text-align: center; color: var(--muted); }
+
+.selbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--ink); color: var(--bg);
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 13.5px; }
+.selbar .btn { background: transparent; color: var(--bg); border-color: var(--muted); }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30; background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); }
+.confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 8px 10px; }
+.confirm .btn { padding: 4px 10px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>수련회 반편성</h1>
+      <p>명단을 붙여넣으면 성별·학년·소속·교사를 고르게 섞어 반을 나눕니다. 결과는 끌어서 옮길 수 있어요.</p>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="btnSample" type="button">예시 명단</button>
+      <button class="btn ghost" id="btnReset" type="button">처음부터</button>
+    </div>
+  </header>
+  <div id="resetConfirm" class="confirm" hidden>
+    명단, 규칙, 편성 결과를 모두 지웁니다.
+    <button class="btn" id="resetYes" type="button">모두 지우기</button>
+    <button class="btn" id="resetNo" type="button">취소</button>
+  </div>
+
+  <div class="layout">
+    <aside class="rail">
+      <section class="panel">
+        <div class="panel-h"><span class="step">1</span><h2>참가자 명단</h2>
+          <label class="btn ghost aside" for="file">파일 열기</label>
+          <input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden>
+        </div>
+        <p class="hint">엑셀에서 표를 복사해 붙여넣으세요. 첫 줄이 <code>이름 성별 학년 소속 역할</code> 같은 머리글이면 열 순서는 상관없어요. 역할에 <code>교사</code>·<code>리더</code>·<code>간사</code>라고 쓰면 반마다 나눠 배치합니다.</p>
+        <div id="sampleNote" class="notice sample" hidden>지금은 예시 명단입니다. 실제 명단으로 바꿔 붙여넣으세요.</div>
+        <textarea id="roster" spellcheck="false" placeholder="이름&#9;성별&#9;학년&#9;소속&#9;역할&#10;김민준&#9;남&#9;중2&#9;사랑셀&#10;이서연&#9;여&#9;고1&#9;믿음셀&#10;박지훈&#9;남&#9;&#9;&#9;교사"></textarea>
+        <div class="stats" id="rosterStats"></div>
+        <ul class="issues" id="rosterIssues" hidden></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-h"><span class="step">2</span><h2>편성 방식</h2></div>
+        <div class="field">
+          <span class="lab">나누는 기준</span>
+          <div class="row">
+            <div class="seg" role="radiogroup" aria-label="나누는 기준">
+              <input type="radio" name="groupBy" id="gbCount" value="count"><label for="gbCount">반 개수</label>
+              <input type="radio" name="groupBy" id="gbSize" value="size"><label for="gbSize">반당 인원</label>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="groupNum" id="groupNumLabel">반 개수</label>
+          <div class="row"><input class="num" type="number" id="groupNum" min="1" max="99"><span class="hint" id="groupNumHint"></span></div>
+        </div>
+        <div class="field">
+          <span class="lab">남녀</span>
+          <div class="seg" role="radiogroup" aria-label="남녀 구성">
+            <input type="radio" name="genderMode" id="gmMixed" value="mixed"><label for="gmMixed">혼성반</label>
+            <input type="radio" name="genderMode" id="gmSplit" value="split"><label for="gmSplit">남녀 분반</label>
+          </div>
+        </div>
+        <div class="field" style="align-items:start">
+          <span class="lab" style="padding-top:2px">고르게 섞기</span>
+          <div class="checks">
+            <label><input type="checkbox" id="balGender">성비</label>
+            <label><input type="checkbox" id="balGrade">학년</label>
+            <label><input type="checkbox" id="balChurch">소속 흩기</label>
+            <label><input type="checkbox" id="balStaff">교사 배치</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-h"><span class="step">3</span><h2>특별 규칙</h2><span class="hint aside">선택</span></div>
+        <div>
+          <label class="hint" for="together">꼭 같은 반 · 한 줄에 한 묶음, 쉼표로 구분</label>
+          <textarea class="rules" id="together" spellcheck="false" placeholder="김민준, 이서준&#10;박지훈 선생님 반에 최하은 → 박지훈, 최하은"></textarea>
+        </div>
+        <div>
+          <label class="hint" for="apart">서로 다른 반 · 한 줄에 한 묶음, 쉼표로 구분</label>
+          <textarea class="rules" id="apart" spellcheck="false" placeholder="정우진, 강도윤&#10;친남매·쌍둥이 등"></textarea>
+        </div>
+        <ul class="issues" id="ruleIssues" hidden></ul>
+      </section>
+
+      <button class="btn primary big" id="btnRun" type="button">반 편성하기</button>
+      <p class="hint" style="text-align:center">손으로 옮긴 사람은 고정되어, 다시 편성해도 그 반에 남습니다.</p>
+    </aside>
+
+    <main class="board" id="board"></main>
+  </div>
+</div>
+
+<div class="selbar" id="selbar" hidden>
+  <span id="selText"></span>
+  <button class="btn" id="selCancel" type="button">취소</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const STORE_KEY = 'retreat-groups-v1';
+
+const ICON_LOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>';
+const ICON_UNLOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>';
+
+const defaults = () => ({
+  roster: '', isSample: false, together: '', apart: '',
+  settings: { groupBy: 'count', groupCount: 6, groupSize: 10, genderMode: 'mixed',
+    bal: { gender: true, grade: true, church: true, staff: true } },
+  result: null
+});
+let state = defaults();
+
+/* ---------- storage ---------- */
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }, 250);
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    const d = defaults();
+    state = Object.assign(d, s);
+    state.settings = Object.assign(d.settings, s.settings || {});
+    state.settings.bal = Object.assign(defaults().settings.bal, (s.settings || {}).bal || {});
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ---------- random ---------- */
+function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ---------- sample ---------- */
+function makeSample() {
+  const r = mulberry(20261114);
+  const pick = a => a[Math.floor(r() * a.length)];
+  const sur = '김이박최정강조윤장임한오서신권황안송류홍'.split('');
+  const mg = ['민준','서준','도윤','예준','시우','하준','주원','지호','지후','준우','현우','건우','우진','선우','연우','유준','정우','승우','승현','시윤','은찬','태윤'];
+  const fg = ['서연','서윤','지우','서현','민서','하은','하윤','윤서','지민','채원','지유','수아','지아','은서','다은','예은','수빈','소율','예린','지원','나은','유나'];
+  const grades = ['중1','중2','중3','고1','고2','고3'];
+  const cells = ['사랑셀','믿음셀','소망셀','기쁨셀','화평셀'];
+  const used = new Set(); const rows = [];
+  const uniq = g => { let n; do n = pick(sur) + pick(g); while (used.has(n)); used.add(n); return n; };
+  for (let i = 0; i < 56; i++) {
+    const male = r() < 0.48;
+    rows.push([uniq(male ? mg : fg), male ? '남' : '여', pick(grades), r() < 0.35 ? cells[0] : pick(cells), '']);
+  }
+  for (let i = 0; i < 7; i++) { const male = i % 2 === 0; rows.push([uniq(male ? mg : fg), male ? '남' : '여', '', '', i === 0 ? '간사' : '교사']); }
+  const text = ['이름\t성별\t학년\t소속\t역할', ...rows.map(x => x.join('\t'))].join('\n');
+  const st = rows.filter(x => !x[4]);
+  return { text, together: `${st[0][0]}, ${st[1][0]}`, apart: `${st[2][0]}, ${st[3][0]}\n${st[4][0]}, ${st[5][0]}, ${st[6][0]}` };
+}
+
+/* ---------- parsing ---------- */
+const ALIAS = {
+  name: /^(이름|성명|name|성함)$/i,
+  gender: /^(성별|gender|sex|남녀)$/i,
+  grade: /^(학년|나이|grade|age|학교|연령|기수|또래)$/i,
+  church: /^(소속|셀|교회|조|목장|부서|반|church|group|team|cell|지역|구역)$/i,
+  role: /^(역할|구분|직분|role|직책|담당)$/i,
+  note: /^(메모|비고|note|특이사항)$/i
+};
+function normGender(v) {
+  v = (v || '').trim().toLowerCase();
+  if (/^(남|남자|남성|m|male|형제|boy|b)$/.test(v)) return '남';
+  if (/^(여|여자|여성|f|female|자매|girl|g)$/.test(v)) return '여';
+  return '';
+}
+const STAFF_RE = /(교사|선생|쌤|리더|간사|스태프|staff|teacher|leader|목사|전도사|담당|조장|반장교사|섬김이)/i;
+function splitLine(line, delim) {
+  if (delim === '\t') return line.split('\t').map(s => s.trim());
+  const out = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+    else if (c === '"') q = true; else if (c === delim) { out.push(cur.trim()); cur = ''; } else cur += c;
+  }
+  out.push(cur.trim()); return out;
+}
+function parseRoster(text) {
+  const issues = [];
+  const lines = (text || '').split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  if (!lines.length) return { people: [], issues };
+  const delim = lines.some(l => l.includes('\t')) ? '\t' : (lines.some(l => l.includes(',')) ? ',' : null);
+  const rows = lines.map(l => delim ? splitLine(l, delim) : l.trim().split(/\s+/));
+  let cols = { name: 0, gender: 1, grade: 2, church: 3, role: 4, note: 5 };
+  let start = 0;
+  const head = rows[0];
+  if (head.some(h => ALIAS.name.test(h.trim()))) {
+    cols = {};
+    head.forEach((h, i) => { for (const k in ALIAS) if (cols[k] == null && ALIAS[k].test(h.trim())) cols[k] = i; });
+    start = 1;
+  }
+  const seen = new Map(); const people = [];
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i]; const get = k => cols[k] != null ? (r[cols[k]] || '').trim() : '';
+    let name = get('name');
+    if (!name) { issues.push(`${i + 1}번째 줄: 이름이 비어 있어 건너뜁니다.`); continue; }
+    const rawG = get('gender'); const gender = normGender(rawG);
+    if (rawG && !gender) issues.push(`${name}: 성별 "${rawG}"을(를) 알아보지 못했어요. 남/여로 써 주세요.`);
+    const roleRaw = get('role');
+    const staff = !!roleRaw && STAFF_RE.test(roleRaw);
+    const n = (seen.get(name) || 0) + 1; seen.set(name, n);
+    let key = name;
+    if (n > 1) { key = `${name} (${n})`; issues.push(`이름 "${name}"이(가) 중복되어 "${key}"(으)로 구분했어요.`); }
+    people.push({ key, name: key, gender, grade: get('grade'), church: get('church'), role: staff ? roleRaw : '', staff, note: get('note') });
+  }
+  return { people, issues };
+}
+function parseRules(text, keys) {
+  const groups = []; const issues = [];
+  (text || '').split(/\r?\n/).forEach(line => {
+    const names = line.split(/[,，、\/]| 와 | 과 |\s{2,}/).map(s => s.trim()).filter(Boolean);
+    if (names.length < 2) { if (names.length === 1 && line.trim()) issues.push(`"${line.trim()}": 이름을 두 명 이상 쉼표로 적어 주세요.`); return; }
+    const found = [];
+    names.forEach(n => { if (keys.has(n)) found.push(n); else issues.push(`규칙의 "${n}"을(를) 명단에서 찾지 못했어요.`); });
+    if (found.length >= 2) groups.push([...new Set(found)]);
+  });
+  return { groups, issues };
+}
+
+/* ---------- model + optimizer ---------- */
+function groupCountFor(people, s) {
+  const students = people.filter(p => !p.staff).length || people.length;
+  let G = s.groupBy === 'size' ? Math.round(students / Math.max(1, s.groupSize)) : s.groupCount;
+  return Math.max(1, Math.min(99, G || 1, Math.max(1, students)));
+}
+
+function buildModel(people, s, together, apart, prev) {
+  const G = groupCountFor(people, s);
+  const P = people.length;
+  const idx = new Map(people.map((p, i) => [p.key, i]));
+  const warnings = [];
+  const males = people.filter(p => !p.staff && p.gender === '남').length;
+  const females = people.filter(p => !p.staff && p.gender === '여').length;
+  let split = s.genderMode === 'split' && G >= 2 && males > 0 && females > 0;
+  if (s.genderMode === 'split' && !split) warnings.push(G < 2 ? '반이 1개라 남녀 분반을 할 수 없어요.' : '성별이 한쪽뿐이라 혼성반으로 편성했어요.');
+  const pool = new Array(G).fill(0); // 0 = all, 1 = 남, 2 = 여
+  if (split) {
+    const gM = Math.min(G - 1, Math.max(1, Math.round(G * males / (males + females))));
+    for (let g = 0; g < G; g++) pool[g] = g < gM ? 1 : 2;
+  }
+  const poolOfPerson = p => split && !p.staff ? (p.gender === '남' ? 1 : p.gender === '여' ? 2 : 0) : 0;
+
+  const gradeList = [...new Set(people.filter(p => !p.staff && p.grade).map(p => p.grade))];
+  const churchList = [...new Set(people.filter(p => !p.staff && p.church).map(p => p.church))];
+  const K = gradeList.length, C = churchList.length;
+  const gi = people.map(p => p.staff || !p.grade ? -1 : gradeList.indexOf(p.grade));
+  const ci = people.map(p => p.staff || !p.church ? -1 : churchList.indexOf(p.church));
+  const sx = people.map(p => p.gender === '남' ? 1 : p.gender === '여' ? 2 : 0);
+  const st = people.map(p => p.staff ? 1 : 0);
+
+  // pool statistics (pools 0,1,2) -> what a group in that pool should look like
+  const poolGroups = [0, 0, 0]; pool.forEach(x => poolGroups[x]++);
+  const inPool = (p, x) => x === 0 ? true : poolOfPerson(p) === x || poolOfPerson(p) === 0;
+  const ps = [0, 1, 2].map(x => {
+    if (!poolGroups[x]) return null;
+    const mem = people.filter(p => inPool(p, x));
+    const studs = mem.filter(p => !p.staff);
+    const share = new Float64Array(2 + K + C);
+    let unknownShare = 0;
+    studs.forEach(p => {
+      if (p.gender === '남') share[0]++; else if (p.gender === '여') share[1]++;
+      if (gi[idx.get(p.key)] >= 0) share[2 + gi[idx.get(p.key)]]++;
+      if (ci[idx.get(p.key)] >= 0) share[2 + K + ci[idx.get(p.key)]]++;
+      if (x !== 0 && poolOfPerson(p) === 0) unknownShare++;
+    });
+    const n = studs.length || 1;
+    for (let k = 0; k < share.length; k++) share[k] /= n;
+    const exclusive = studs.length - unknownShare * (x === 0 ? 0 : 1);
+    const staffN = mem.filter(p => p.staff && (x === 0 || poolOfPerson(p) === x)).length;
+    return { share, exclusive, unknownShare, staffN };
+  });
+  const unknownStudents = split ? people.filter(p => !p.staff && poolOfPerson(p) === 0).length : 0;
+  const unknownStaff = split ? people.filter(p => p.staff && poolOfPerson(p) === 0).length : 0;
+  const target = new Float64Array(G), staffExp = new Float64Array(G);
+  for (let g = 0; g < G; g++) {
+    const x = pool[g], info = ps[x];
+    if (x === 0) { target[g] = info.exclusive / poolGroups[0]; staffExp[g] = info.staffN / poolGroups[0]; }
+    else { target[g] = (info.exclusive + unknownStudents * poolGroups[x] / G) / poolGroups[x]; staffExp[g] = (info.staffN + unknownStaff * poolGroups[x] / G) / poolGroups[x]; }
+  }
+
+  // units from "together" rules (union-find)
+  const parent = people.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  together.forEach(grp => { const a = idx.get(grp[0]); grp.slice(1).forEach(n => { const b = idx.get(n); parent[find(b)] = find(a); }); });
+  const unitMap = new Map(); const unitOf = new Int32Array(P);
+  people.forEach((_, i) => { const r = find(i); if (!unitMap.has(r)) unitMap.set(r, []); unitMap.get(r).push(i); });
+  const units = [];
+  unitMap.forEach(members => {
+    const u = units.length; members.forEach(m => unitOf[m] = u);
+    const allowed = new Uint8Array(G);
+    const pools = new Set(members.map(m => poolOfPerson(people[m])).filter(x => x));
+    if (pools.size > 1) { warnings.push(`${members.map(m => people[m].name).join(', ')}: 남녀 분반이라 같은 반에 넣을 수 없어 규칙을 일부 무시했어요.`); }
+    const want = pools.size === 1 ? [...pools][0] : 0;
+    for (let g = 0; g < G; g++) allowed[g] = (want === 0 || pool[g] === want || pools.size > 1) ? 1 : 0;
+    let fixed = -1;
+    if (prev) members.forEach(m => {
+      const k = people[m].key;
+      if (prev.locked && prev.locked[k] && prev.groupOf && prev.groupOf[k] != null && prev.groupOf[k] < G) {
+        const g = prev.groupOf[k];
+        if (fixed === -1) fixed = g; else if (fixed !== g) warnings.push(`${people[m].name}: 같은 반 규칙과 고정된 반이 서로 달라요.`);
+      }
+    });
+    if (fixed >= 0) { allowed.fill(0); allowed[fixed] = 1; }
+    const allowedList = []; for (let g = 0; g < G; g++) if (allowed[g]) allowedList.push(g);
+    if (!allowedList.length) { allowed.fill(1); for (let g = 0; g < G; g++) allowedList.push(g); }
+    units.push({ members, allowed, allowedList, fixed });
+  });
+
+  const apartPairs = [];
+  apart.forEach(grp => {
+    for (let a = 0; a < grp.length; a++) for (let b = a + 1; b < grp.length; b++) {
+      const p = idx.get(grp[a]), q = idx.get(grp[b]);
+      if (unitOf[p] === unitOf[q]) warnings.push(`${grp[a]}, ${grp[b]}: "같은 반"과 "다른 반" 규칙에 모두 들어 있어 "같은 반"을 따랐어요.`);
+      else apartPairs.push([p, q]);
+    }
+  });
+  return { people, G, P, K, C, pool, split, target, staffExp, ps, gi, ci, sx, st, units, unitOf, apartPairs, warnings, gradeList, churchList };
+}
+
+function optimize(M, bal, seed) {
+  const { G, K, C, units, pool, target, staffExp, ps, gi, ci, sx, st, apartPairs } = M;
+  const rnd = mulberry(seed);
+  const W = { size: 12, gender: bal.gender ? 3 : 0, grade: bal.grade ? 2 : 0, church: bal.church ? 2.5 : 0, staff: bal.staff ? 10 : 0, apart: 400 };
+  const n = new Float64Array(G), male = new Float64Array(G), fem = new Float64Array(G), staff = new Float64Array(G);
+  const gr = new Float64Array(G * Math.max(1, K)), ch = new Float64Array(G * Math.max(1, C));
+  const ug = new Int32Array(units.length).fill(-1);
+  function add(u, g, s) {
+    for (const p of units[u].members) {
+      if (st[p]) { staff[g] += s; continue; }
+      n[g] += s;
+      if (sx[p] === 1) male[g] += s; else if (sx[p] === 2) fem[g] += s;
+      if (gi[p] >= 0) gr[g * K + gi[p]] += s;
+      if (ci[p] >= 0) ch[g * C + ci[p]] += s;
+    }
+  }
+  function gc(g) {
+    const t = target[g], sh = ps[pool[g]].share;
+    let c = W.size * (n[g] - t) ** 2;
+    if (W.gender && !M.split) c += W.gender * ((male[g] - t * sh[0]) ** 2 + (fem[g] - t * sh[1]) ** 2);
+    if (W.grade) for (let k = 0; k < K; k++) c += W.grade * (gr[g * K + k] - t * sh[2 + k]) ** 2;
+    if (W.church) for (let k = 0; k < C; k++) { const d = ch[g * C + k] - t * sh[2 + K + k]; c += W.church * (d > 0 ? d * d * 1.5 : d * d); }
+    if (W.staff) { c += W.staff * (staff[g] - staffExp[g]) ** 2; if (staff[g] === 0 && staffExp[g] >= 1) c += W.staff * 2; }
+    return c;
+  }
+  const unitOf = M.unitOf;
+  function apartCost() { let v = 0; for (const [p, q] of apartPairs) if (ug[unitOf[p]] === ug[unitOf[q]]) v++; return v * W.apart; }
+
+  // greedy init: fixed first, then big units, then shuffled
+  const order = units.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  order.sort((a, b) => (units[b].fixed >= 0) - (units[a].fixed >= 0) || units[b].members.length - units[a].members.length || units[b].members.some(p => st[p]) - units[a].members.some(p => st[p]));
+  for (const u of order) {
+    let best = -1, bestD = Infinity;
+    for (const g of units[u].allowedList) {
+      const before = gc(g) + apartCost(); add(u, g, 1); ug[u] = g; const after = gc(g) + apartCost(); add(u, g, -1); ug[u] = -1;
+      const d = after - before + rnd() * 0.01;
+      if (d < bestD) { bestD = d; best = g; }
+    }
+    add(u, best, 1); ug[u] = best;
+  }
+  const free = units.map((u, i) => i).filter(i => units[i].allowedList.length > 1);
+  let total = 0; for (let g = 0; g < G; g++) total += gc(g); total += apartCost();
+  let bestTotal = total, bestUg = ug.slice();
+  if (free.length) {
+    const iters = Math.min(300000, 40000 + M.P * 500);
+    let T = 8; const Tend = 0.01, cool = Math.pow(Tend / T, 1 / iters);
+    for (let it = 0; it < iters; it++, T *= cool) {
+      const u = free[Math.floor(rnd() * free.length)], a = ug[u];
+      if (rnd() < 0.45) {
+        const al = units[u].allowedList, b = al[Math.floor(rnd() * al.length)];
+        if (b === a) continue;
+        const before = gc(a) + gc(b) + apartCost();
+        add(u, a, -1); add(u, b, 1); ug[u] = b;
+        const d = gc(a) + gc(b) + apartCost() - before;
+        if (d <= 0 || rnd() < Math.exp(-d / T)) total += d; else { add(u, b, -1); add(u, a, 1); ug[u] = a; }
+      } else {
+        const v = free[Math.floor(rnd() * free.length)], b = ug[v];
+        if (b === a || !units[u].allowed[b] || !units[v].allowed[a]) continue;
+        const before = gc(a) + gc(b) + apartCost();
+        add(u, a, -1); add(v, b, -1); add(u, b, 1); add(v, a, 1); ug[u] = b; ug[v] = a;
+        const d = gc(a) + gc(b) + apartCost() - before;
+        if (d <= 0 || rnd() < Math.exp(-d / T)) total += d; else { add(u, b, -1); add(v, a, -1); add(u, a, 1); add(v, b, 1); ug[u] = a; ug[v] = b; }
+      }
+      if (total < bestTotal - 1e-9) { bestTotal = total; bestUg = ug.slice(); }
+    }
+  }
+  return bestUg;
+}
+
+/* ---------- derived ---------- */
+let cache = { people: [], issues: [], keys: new Set() };
+function derive() {
+  const { people, issues } = parseRoster(state.roster);
+  const keys = new Set(people.map(p => p.key));
+  const t = parseRules(state.together, keys), a = parseRules(state.apart, keys);
+  cache = { people, issues, keys, together: t.groups, apart: a.groups, ruleIssues: [...t.issues, ...a.issues] };
+  return cache;
+}
+
+function runAssign(reshuffle) {
+  const d = derive();
+  if (!d.people.length) { toast('먼저 명단을 붙여넣어 주세요.'); return; }
+  const prev = state.result;
+  const M = buildModel(d.people, state.settings, d.together, d.apart, prev);
+  const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+  const t0 = performance.now();
+  const ug = optimize(M, state.settings.bal, seed);
+  const groupOf = {}; const locked = {};
+  M.units.forEach((u, i) => u.members.forEach(p => { groupOf[d.people[p].key] = ug[i]; }));
+  if (prev && prev.locked) for (const k in prev.locked) if (prev.locked[k] && groupOf[k] != null && prev.groupOf[k] === groupOf[k]) locked[k] = true;
+  const names = [];
+  for (let g = 0; g < M.G; g++) {
+    const old = prev && prev.names && prev.names[g];
+    names.push(old && !/^\d+반$/.test(old) ? old : `${g + 1}반`);
+  }
+  state.result = { G: M.G, pool: Array.from(M.pool), names, groupOf, locked, warnings: M.warnings, ms: Math.round(performance.now() - t0) };
+  save(); renderBoard();
+  toast(reshuffle ? '다시 편성했어요.' : `${M.G}개 반으로 편성했어요.`);
+}
+
+/* ---------- rendering ---------- */
+const STAGE = { '유': 0, '초': 1, '중': 2, '고': 3, '청': 4, '대': 4 };
+function gradeCmp(a, b) {
+  const ra = STAGE[a[0]] ?? 9, rb = STAGE[b[0]] ?? 9;
+  return ra - rb || a.localeCompare(b, 'ko', { numeric: true });
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function hueFor(str, list) { const i = list.indexOf(str); return i < 0 ? 0 : Math.round((i * 137.508 + 150) % 360); }
+
+function renderRosterInfo() {
+  const d = derive();
+  const s = d.people.filter(p => !p.staff), staff = d.people.filter(p => p.staff);
+  const m = s.filter(p => p.gender === '남').length, f = s.filter(p => p.gender === '여').length;
+  const grades = new Set(s.map(p => p.grade).filter(Boolean)), churches = new Set(s.map(p => p.church).filter(Boolean));
+  const chip = (label, v) => `<span class="stat">${label} <b>${v}</b></span>`;
+  $('#rosterStats').innerHTML = d.people.length ? [chip('학생', s.length), chip('교사', staff.length), chip('남', m), chip('여', f), grades.size ? chip('학년', grades.size + '종') : '', churches.size ? chip('소속', churches.size + '곳') : ''].join('') : '<span class="hint">아직 명단이 없어요.</span>';
+  const li = a => a.slice(0, 30).map(x => `<li>${esc(x)}</li>`).join('') + (a.length > 30 ? `<li>외 ${a.length - 30}건</li>` : '');
+  $('#rosterIssues').hidden = !d.issues.length; $('#rosterIssues').innerHTML = li(d.issues);
+  $('#ruleIssues').hidden = !d.ruleIssues.length; $('#ruleIssues').innerHTML = li(d.ruleIssues);
+  $('#sampleNote').hidden = !state.isSample;
+  const G = groupCountFor(d.people, state.settings);
+  const avg = s.length ? (s.length / G) : 0;
+  $('#groupNumHint').textContent = d.people.length ? (state.settings.groupBy === 'size' ? `→ ${G}개 반` : `→ 반당 약 ${avg.toFixed(1)}명`) : '';
+}
+
+function computeGroups() {
+  const r = state.result, d = cache;
+  const groups = Array.from({ length: r.G }, () => []); const unassigned = [];
+  d.people.forEach(p => { const g = r.groupOf[p.key]; if (g != null && g < r.G) groups[g].push(p); else unassigned.push(p); });
+  const gradeOrder = [...new Set(d.people.map(p => p.grade).filter(Boolean))].sort(gradeCmp);
+  const sortP = (a, b) => (b.staff - a.staff) || (gradeOrder.indexOf(a.grade) - gradeOrder.indexOf(b.grade)) || a.name.localeCompare(b.name, 'ko');
+  groups.forEach(g => g.sort(sortP)); unassigned.sort(sortP);
+  return { groups, unassigned };
+}
+
+function groupWarnings(groups) {
+  const r = state.result, d = cache, bal = state.settings.bal;
+  const gOf = r.groupOf; const out = groups.map(() => []); const global = [];
+  d.apart.forEach(grp => {
+    for (let a = 0; a < grp.length; a++) for (let b = a + 1; b < grp.length; b++)
+      if (gOf[grp[a]] != null && gOf[grp[a]] === gOf[grp[b]]) out[gOf[grp[a]]]?.push({ bad: true, t: `${grp[a]}·${grp[b]} 분리 규칙` });
+  });
+  d.together.forEach(grp => { const set = new Set(grp.map(k => gOf[k])); if (set.size > 1) global.push(`${grp.join(', ')}: 같은 반 규칙이 깨졌어요.`); });
+  const students = d.people.filter(p => !p.staff);
+  const staffTotal = d.people.length - students.length;
+  const avg = students.length / r.G;
+  const churchTotals = {}; students.forEach(p => { if (p.church) churchTotals[p.church] = (churchTotals[p.church] || 0) + 1; });
+  groups.forEach((g, i) => {
+    const s = g.filter(p => !p.staff);
+    const m = s.filter(p => p.gender === '남').length, f = s.filter(p => p.gender === '여').length;
+    if (bal.staff && staffTotal >= r.G && !g.some(p => p.staff)) out[i].push({ bad: true, t: '교사 없음' });
+    if (!r.pool[i] && bal.gender && Math.abs(m - f) >= 3) out[i].push({ t: `성비 ${m}:${f}` });
+    if (r.pool[i] === 0 && Math.abs(s.length - avg) >= 2) out[i].push({ t: '인원 차이' });
+    if (bal.church) {
+      const cnt = {}; s.forEach(p => { if (p.church) cnt[p.church] = (cnt[p.church] || 0) + 1; });
+      for (const c in cnt) { const lim = Math.ceil(churchTotals[c] / r.G) + 1; if (cnt[c] > lim && cnt[c] >= 3) out[i].push({ t: `${c} ${cnt[c]}명` }); }
+    }
+  });
+  return { out, global };
+}
+
+function personRow(p, groupIdx) {
+  const r = state.result; const locked = !!(r.locked && r.locked[p.key]);
+  const sxc = p.gender === '남' ? 'm' : p.gender === '여' ? 'f' : '';
+  const churchList = [...new Set(cache.people.filter(x => !x.staff && x.church).map(x => x.church))];
+  const tags = [
+    p.grade ? `<span class="grade">${esc(p.grade)}</span>` : '',
+    p.church ? `<span title="${esc(p.church)}" style="display:inline-flex;gap:4px;align-items:center"><i class="cdot" style="--h:${hueFor(p.church, churchList)}"></i>${esc(p.church)}</span>` : ''
+  ].join('');
+  const sel = selected === p.key ? ' sel' : '';
+  return `<li class="person${p.staff ? ' staff' : ''}${sel}" draggable="true" data-key="${esc(p.key)}" tabindex="0" title="${esc(p.name)}${p.note ? ' · ' + esc(p.note) : ''}">
+    <i class="sex ${sxc}" aria-label="${p.gender || '성별 미상'}"></i>
+    <span class="pname">${esc(p.name)}${p.staff ? `<span class="role">${esc(p.role.length > 4 ? '교사' : p.role)}</span>` : ''}</span>
+    <span class="ptags">${tags}</span>
+    <button class="lock${locked ? ' on' : ''}" type="button" data-lock="${esc(p.key)}" aria-pressed="${locked}" title="${locked ? '고정 풀기' : '이 반에 고정'}" aria-label="${locked ? '고정 풀기' : '이 반에 고정'}">${locked ? ICON_LOCK : ICON_UNLOCK}</button>
+  </li>`;
+}
+
+function renderBoard() {
+  const board = $('#board');
+  derive();
+  const r = state.result;
+  if (!r || !cache.people.length) {
+    board.innerHTML = `<div class="empty-board"><h3 style="font-size:16px;color:var(--ink);margin-bottom:6px">아직 편성 결과가 없어요</h3>왼쪽에 명단을 붙여넣고 <b>반 편성하기</b>를 누르면 여기에 반별 카드가 나타납니다.</div>`;
+    return;
+  }
+  const { groups, unassigned } = computeGroups();
+  const { out: warns, global } = groupWarnings(groups);
+  const badCount = warns.flat().filter(w => w.bad).length + global.length;
+  const softCount = warns.flat().filter(w => !w.bad).length;
+  const students = cache.people.filter(p => !p.staff);
+  const sizes = groups.map(g => g.filter(p => !p.staff).length);
+  const lockedN = Object.keys(r.locked || {}).filter(k => r.locked[k] && cache.keys.has(k)).length;
+  const status = badCount ? `<span class="pill bad">확인 필요 ${badCount}건</span>` : softCount ? `<span class="pill warn">참고 ${softCount}건</span>` : `<span class="pill ok">규칙 모두 지킴</span>`;
+  const churchList = [...new Set(students.filter(x => x.church).map(x => x.church))];
+
+  let html = `<div class="summary">
+    <div class="kpi"><b>${r.G}</b><span>개 반</span></div>
+    <div class="kpi"><b>${students.length}</b><span>명 학생</span></div>
+    <div class="kpi"><b>${sizes.length ? Math.min(...sizes) : 0}–${sizes.length ? Math.max(...sizes) : 0}</b><span>명 / 반</span></div>
+    ${lockedN ? `<div class="kpi"><b>${lockedN}</b><span>명 고정</span></div>` : ''}
+    ${status}
+    <span class="spacer"></span>
+    <button class="btn" type="button" id="btnReshuffle">다시 섞기</button>
+    ${lockedN ? '<button class="btn ghost" type="button" id="btnUnlockAll">고정 모두 풀기</button>' : ''}
+  </div>`;
+  const notes = [...(r.warnings || []), ...global];
+  if (notes.length) html += `<div class="notice">${notes.map(esc).join('<br>')}</div>`;
+  if (cache.people.some(p => r.groupOf[p.key] == null)) html += `<div class="notice">명단에 새로 추가된 사람이 있어요. 미배정 칸에서 반으로 끌어 옮기거나 <b>다시 섞기</b>를 누르세요.</div>`;
+  html += `<div class="legend"><span><i class="sex m"></i>남</span><span><i class="sex f"></i>여</span>${churchList.slice(0, 12).map(c => `<span><i class="cdot" style="--h:${hueFor(c, churchList)}"></i>${esc(c)}</span>`).join('')}<span>· 이름을 끌어 다른 반에 놓거나, 눌러서 선택한 뒤 옮길 반을 누르세요.</span></div>`;
+  html += `<div class="groups">`;
+  groups.forEach((g, i) => {
+    const s = g.filter(p => !p.staff);
+    const m = s.filter(p => p.gender === '남').length, f = s.filter(p => p.gender === '여').length;
+    const staff = g.filter(p => p.staff);
+    const tot = Math.max(1, s.length);
+    html += `<section class="gcard${selected ? ' target' : ''}" data-group="${i}">
+      <div class="ghead">
+        <div class="gtitle"><input value="${esc(r.names[i] || `${i + 1}반`)}" data-name="${i}" id="gname-${i}" aria-label="${i + 1}번째 반 이름"><span class="gcount">${s.length}명${staff.length ? ` +교사 ${staff.length}` : ''}</span></div>
+        <div class="gbar" aria-hidden="true"><i class="m" style="width:${m / tot * 100}%"></i><i class="f" style="width:${f / tot * 100}%"></i></div>
+        <div class="gmeta">${r.pool[i] === 1 ? '<span class="badge m">남학생반</span>' : r.pool[i] === 2 ? '<span class="badge f">여학생반</span>' : ''}<span>남 ${m} · 여 ${f}</span>${gradeSummary(s)}</div>
+        ${warns[i].length ? `<div class="gwarn">${warns[i].map(w => `<span class="${w.bad ? 'bad' : ''}">${esc(w.t)}</span>`).join('')}</div>` : ''}
+      </div>
+      <ul class="members">${g.length ? g.map(p => personRow(p, i)).join('') : '<li class="empty-g">비어 있음</li>'}</ul>
+    </section>`;
+  });
+  if (unassigned.length) html += `<section class="gcard unassigned${selected ? ' target' : ''}" data-group="-1"><div class="ghead"><div class="gtitle"><h3 style="font-size:15px">미배정</h3><span class="gcount">${unassigned.length}명</span></div></div><ul class="members">${unassigned.map(p => personRow(p, -1)).join('')}</ul></section>`;
+  html += `</div>`;
+  html += `<section class="export">
+    <div class="row"><h3 style="font-size:15px">결과 내보내기</h3><span class="spacer" style="flex:1"></span>
+      <button class="btn" type="button" data-export="notice">공지용 복사</button>
+      <button class="btn" type="button" data-export="tsv">엑셀용 복사</button>
+      <button class="btn" type="button" data-export="grid">반별 표 복사</button>
+    </div>
+    <p class="hint">단톡방에는 <b>공지용</b>, 엑셀·구글시트에는 <b>엑셀용</b>(한 사람 한 줄) 또는 <b>반별 표</b>(반이 한 열)를 붙여넣으세요.</p>
+    <textarea id="exportBox" readonly aria-label="내보내기 미리보기">${esc(exportText('notice', groups))}</textarea>
+  </section>`;
+  board.innerHTML = html;
+}
+
+function gradeSummary(s) {
+  const cnt = {}; s.forEach(p => { if (p.grade) cnt[p.grade] = (cnt[p.grade] || 0) + 1; });
+  const keys = Object.keys(cnt).sort(gradeCmp);
+  return keys.length ? `<span>${keys.map(k => `${esc(k)} ${cnt[k]}`).join(' · ')}</span>` : '';
+}
+
+function exportText(kind, groups) {
+  groups = groups || computeGroups().groups;
+  const r = state.result;
+  const name = i => r.names[i] || `${i + 1}반`;
+  if (kind === 'tsv') {
+    const lines = ['반\t이름\t성별\t학년\t소속\t역할'];
+    groups.forEach((g, i) => g.forEach(p => lines.push([name(i), p.name, p.gender, p.grade, p.church, p.staff ? p.role : ''].join('\t'))));
+    return lines.join('\n');
+  }
+  if (kind === 'grid') {
+    const max = Math.max(...groups.map(g => g.length));
+    const lines = [groups.map((g, i) => name(i)).join('\t')];
+    for (let k = 0; k < max; k++) lines.push(groups.map(g => g[k] ? g[k].name + (g[k].staff ? ' (교사)' : '') : '').join('\t'));
+    return lines.join('\n');
+  }
+  return groups.map((g, i) => {
+    const staff = g.filter(p => p.staff).map(p => p.name), s = g.filter(p => !p.staff);
+    return `[${name(i)}] ${s.length}명${staff.length ? ` · 교사 ${staff.join(', ')}` : ''}\n${s.map(p => p.name).join(', ')}`;
+  }).join('\n\n');
+}
+
+/* ---------- interactions ---------- */
+let selected = null;
+function setSelected(k) {
+  selected = k; renderBoard();
+  $('#selbar').hidden = !k;
+  if (k) $('#selText').textContent = `${k} 선택됨 · 옮길 반 카드를 누르세요`;
+}
+function moveTo(key, g) {
+  const r = state.result; if (!r) return;
+  if (g < 0) { delete r.groupOf[key]; delete r.locked[key]; }
+  else { r.groupOf[key] = g; r.locked[key] = true; }
+  save(); selected = null; $('#selbar').hidden = true; renderBoard();
+}
+
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 1800); }
+
+async function copy(text, label) {
+  try { await navigator.clipboard.writeText(text); toast(`${label} 복사했어요.`); }
+  catch (e) { const box = $('#exportBox'); if (box) { box.value = text; box.focus(); box.select(); } toast('복사가 막혀 있어요. 선택된 글을 Ctrl+C로 복사하세요.'); }
+}
+
+function syncForm() {
+  const s = state.settings;
+  $('#roster').value = state.roster; $('#together').value = state.together; $('#apart').value = state.apart;
+  $(s.groupBy === 'size' ? '#gbSize' : '#gbCount').checked = true;
+  $(s.genderMode === 'split' ? '#gmSplit' : '#gmMixed').checked = true;
+  $('#groupNumLabel').textContent = s.groupBy === 'size' ? '반당 인원' : '반 개수';
+  $('#groupNum').value = s.groupBy === 'size' ? s.groupSize : s.groupCount;
+  $('#balGender').checked = s.bal.gender; $('#balGrade').checked = s.bal.grade; $('#balChurch').checked = s.bal.church; $('#balStaff').checked = s.bal.staff;
+  $('#balGender').disabled = s.genderMode === 'split';
+}
+
+function loadSample() {
+  const smp = makeSample();
+  state = defaults();
+  state.roster = smp.text; state.together = smp.together; state.apart = smp.apart; state.isSample = true;
+  state.settings.groupCount = 7;
+  syncForm(); renderRosterInfo(); runAssign(false);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+if (document.readyState !== 'loading') init();
+let inited = false;
+function init() {
+  if (inited) return; inited = true;
+  if (load() && (state.roster || state.result)) { syncForm(); renderRosterInfo(); renderBoard(); }
+  else loadSample();
+
+  let rosterTimer;
+  $('#roster').addEventListener('input', e => { state.roster = e.target.value; state.isSample = false; save(); clearTimeout(rosterTimer); rosterTimer = setTimeout(() => { renderRosterInfo(); if (state.result) renderBoard(); }, 200); });
+  ['together', 'apart'].forEach(id => $('#' + id).addEventListener('input', e => { state[id] = e.target.value; save(); clearTimeout(rosterTimer); rosterTimer = setTimeout(() => { renderRosterInfo(); if (state.result) renderBoard(); }, 250); }));
+  document.querySelectorAll('input[name="groupBy"]').forEach(el => el.addEventListener('change', e => { state.settings.groupBy = e.target.value; syncForm(); renderRosterInfo(); save(); }));
+  document.querySelectorAll('input[name="genderMode"]').forEach(el => el.addEventListener('change', e => { state.settings.genderMode = e.target.value; syncForm(); save(); }));
+  $('#groupNum').addEventListener('input', e => {
+    const v = Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1));
+    if (state.settings.groupBy === 'size') state.settings.groupSize = v; else state.settings.groupCount = v;
+    renderRosterInfo(); save();
+  });
+  [['balGender', 'gender'], ['balGrade', 'grade'], ['balChurch', 'church'], ['balStaff', 'staff']].forEach(([id, k]) => $('#' + id).addEventListener('change', e => { state.settings.bal[k] = e.target.checked; save(); if (state.result) renderBoard(); }));
+
+  $('#btnRun').addEventListener('click', () => runAssign(false));
+  $('#btnSample').addEventListener('click', loadSample);
+  $('#btnReset').addEventListener('click', () => { $('#resetConfirm').hidden = false; });
+  $('#resetNo').addEventListener('click', () => { $('#resetConfirm').hidden = true; });
+  $('#resetYes').addEventListener('click', () => { state = defaults(); save(); $('#resetConfirm').hidden = true; selected = null; syncForm(); renderRosterInfo(); renderBoard(); $('#roster').focus(); });
+  $('#selCancel').addEventListener('click', () => setSelected(null));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && selected) setSelected(null); });
+
+  $('#file').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      let text;
+      if (/\.xlsx?$/i.test(f.name)) {
+        await loadXLSX();
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: '\t', blankrows: false });
+      } else {
+        const buf = await f.arrayBuffer();
+        text = new TextDecoder('utf-8').decode(buf);
+        if (text.includes('�')) { try { text = new TextDecoder('euc-kr').decode(buf); } catch (er) {} }
+      }
+      state.roster = text.trim(); state.isSample = false; syncForm(); renderRosterInfo(); save();
+      toast(`${f.name}을(를) 불러왔어요.`);
+    } catch (err) { toast('파일을 읽지 못했어요. 엑셀에서 복사해 붙여넣어 보세요.'); }
+    e.target.value = '';
+  });
+
+  const board = $('#board');
+  board.addEventListener('click', e => {
+    const lock = e.target.closest('[data-lock]');
+    if (lock) { const k = lock.dataset.lock, r = state.result; if (r.groupOf[k] == null) return; r.locked[k] = !r.locked[k]; if (!r.locked[k]) delete r.locked[k]; save(); renderBoard(); return; }
+    const ex = e.target.closest('[data-export]');
+    if (ex) { const kind = ex.dataset.export; const txt = exportText(kind); $('#exportBox').value = txt; copy(txt, { notice: '공지용 글을', tsv: '엑셀용 표를', grid: '반별 표를' }[kind]); return; }
+    if (e.target.id === 'btnReshuffle') { runAssign(true); return; }
+    if (e.target.id === 'btnUnlockAll') { state.result.locked = {}; save(); renderBoard(); toast('고정을 모두 풀었어요.'); return; }
+    if (e.target.closest('input')) return;
+    const person = e.target.closest('.person');
+    if (person) {
+      const k = person.dataset.key;
+      if (selected && selected !== k) { const card = person.closest('.gcard'); moveTo(selected, +card.dataset.group); return; }
+      setSelected(selected === k ? null : k); return;
+    }
+    const card = e.target.closest('.gcard');
+    if (card && selected) moveTo(selected, +card.dataset.group);
+  });
+  board.addEventListener('keydown', e => {
+    const person = e.target.closest && e.target.closest('.person');
+    if (person && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); person.click(); }
+  });
+  board.addEventListener('input', e => {
+    if (e.target.dataset.name != null) { state.result.names[+e.target.dataset.name] = e.target.value; save(); const box = $('#exportBox'); if (box) box.value = exportText('notice'); }
+  });
+  board.addEventListener('dragstart', e => {
+    const p = e.target.closest && e.target.closest('.person'); if (!p) return;
+    e.dataTransfer.setData('text/plain', p.dataset.key); e.dataTransfer.effectAllowed = 'move'; p.classList.add('dragging');
+  });
+  board.addEventListener('dragend', e => { const p = e.target.closest && e.target.closest('.person'); if (p) p.classList.remove('dragging'); board.querySelectorAll('.drop').forEach(x => x.classList.remove('drop')); });
+  board.addEventListener('dragover', e => { const c = e.target.closest('.gcard'); if (!c) return; e.preventDefault(); board.querySelectorAll('.drop').forEach(x => x !== c && x.classList.remove('drop')); c.classList.add('drop'); });
+  board.addEventListener('dragleave', e => { const c = e.target.closest('.gcard'); if (c && !c.contains(e.relatedTarget)) c.classList.remove('drop'); });
+  board.addEventListener('drop', e => { const c = e.target.closest('.gcard'); if (!c) return; e.preventDefault(); const k = e.dataTransfer.getData('text/plain'); if (k && cache.keys.has(k)) moveTo(k, +c.dataset.group); });
+}
+
+let xlsxPromise;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return xlsxPromise || (xlsxPromise = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = () => { xlsxPromise = null; rej(); };
+    document.head.appendChild(s);
+  }));
+}
+})();
+</script>
