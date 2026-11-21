@@ -384,7 +384,9 @@ const WD = ['일', '월', '화', '수', '목', '금', '토'];
 const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['attendance', '참석 체크'], ['teams', '팀원 구성'], ['board', '반 배치']];
 
 /* ================= state ================= */
-const blank = () => ({ v: 2, sample: false, meta: { title: '', start: '', end: '' }, classes: [], teachers: [], students: [],
+// 수련회 기본 일정: 2027년 1월 29일(금) ~ 31일(일)
+const RETREAT_START = '2027-01-29', RETREAT_END = '2027-01-31';
+const blank = () => ({ v: 2, sample: false, meta: { title: '', start: RETREAT_START, end: RETREAT_END }, classes: [], teachers: [], students: [],
   info: { ov: {}, tfList: [], teams: [] }, att: {}, plans: {}, versions: [], ver: null, step: 'roster', day: null });
 let S = blank();
 let saveT;
@@ -399,7 +401,7 @@ function save() { clearTimeout(saveT); saveT = setTimeout(flush, 200); }
 window.addEventListener('pagehide', () => { if (saveT) flush(); });
 function load() {
   try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); ensureVersions(S); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
-    migrateOrg(S.info, S.teachers); ensureGenders(S); return true; } catch (e) { return false; }
+    migrateOrg(S.info, S.teachers); if (!S.meta.start) { S.meta.start = RETREAT_START; S.meta.end = RETREAT_END; } ensureGenders(S); return true; } catch (e) { return false; }
 }
 let uid = 0; const nid = p => p + Date.now().toString(36) + (uid++).toString(36);
 
@@ -569,7 +571,7 @@ async function buildTemplate() {
    ['7. 다 채운 파일을 반편성 화면의 [명단 올리기]에 올립니다.']].forEach(([t, b], i) => { const c = g.getCell('A' + (i + 1)); c.value = t; if (b) c.font = { bold: true, size: 14 }; });
 
   const b = wb.addWorksheet('기본정보'); styleSheet(b, [['항목', 16], ['내용', 32], ['설명', 40]]);
-  b.addRow(['수련회 이름', '', '예: 2027 중등부 겨울수련회']); b.addRow(['시작일', '', '예: 2027-01-08']); b.addRow(['종료일', '', '예: 2027-01-10']);
+  b.addRow(['수련회 이름', S.meta.title || '', '예: 2027 겨울수련회']); b.addRow(['시작일', new Date((S.meta.start || RETREAT_START) + 'T00:00:00Z'), '예: 2027-01-29']); b.addRow(['종료일', new Date((S.meta.end || RETREAT_END) + 'T00:00:00Z'), '예: 2027-01-31']);
   ['B3', 'B4'].forEach(a => { b.getCell(a).numFmt = 'yyyy-mm-dd'; b.getCell(a).dataValidation = { type: 'date', operator: 'greaterThan', allowBlank: true, formulae: [new Date(Date.UTC(2000, 0, 1))], showErrorMessage: true, error: '날짜로 적어 주세요. 예: 2027-01-08' }; });
   [2, 3, 4].forEach(r => { b.getCell('C' + r).font = EX_FONT; });
   b.addRow([]);
@@ -696,7 +698,7 @@ async function importFile(file) {
   const st = blank(); const issues = [];
   const bi = find(/기본/);
   if (bi) bi.eachRow(row => { const k = cellText(row.getCell(1).value).replace(/\s+/g, ''); const v = row.getCell(2).value;
-    if (/수련회이름|행사명/.test(k)) st.meta.title = cellText(v); else if (/시작/.test(k)) st.meta.start = toISODate(v); else if (/종료|끝/.test(k)) st.meta.end = toISODate(v); });
+    if (/수련회이름|행사명/.test(k)) st.meta.title = cellText(v); else if (/시작/.test(k)) st.meta.start = toISODate(v) || st.meta.start; else if (/종료|끝/.test(k)) st.meta.end = toISODate(v) || st.meta.end; });
   const clsMap = new Map();
   const getCls = name => { const k = normCls(name); if (!k) return ''; if (!clsMap.has(k)) { const c = { id: nid('c'), name: String(name).trim() }; clsMap.set(k, c); st.classes.push(c); } return clsMap.get(k).id; };
   const isEx = n => /^예\)/.test(n);
@@ -958,7 +960,7 @@ function renderInfo() {
   <div class="cols">
     <section class="panel">
       <h2>수련회</h2>
-      <div class="fld"><label for="mTitle">수련회 이름</label><input class="inp" id="mTitle" value="${esc(S.meta.title)}" placeholder="예: 2027 중등부 겨울수련회"></div>
+      <div class="fld"><label for="mTitle">수련회 이름</label><input class="inp" id="mTitle" value="${esc(S.meta.title)}" placeholder="예: 2027 겨울수련회"></div>
       <div class="form-grid">
         <div class="fld"><label for="mStart">시작일</label><input class="inp" type="date" id="mStart" value="${esc(S.meta.start)}"></div>
         <div class="fld"><label for="mEnd">종료일</label><input class="inp" type="date" id="mEnd" value="${esc(S.meta.end)}"></div>
