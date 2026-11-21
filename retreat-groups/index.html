@@ -312,16 +312,16 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STORE = 'retreat-board-v2';
 const APP_NAME = '분당우리교회 주일학교 수련회 반편성 Tool';
-const ROLES = ['반사', '보조교사', '내부스탭', '외부스탭', '팀장', '행정', '찬양팀', '기타'];
+const ROLES = ['반사', '보조교사', '부장', '새가족', '내부스탭', '외부스탭', '팀장', '행정', '찬양팀', '기타'];
 const CLASS_ROLES = new Set(['반사', '보조교사']);
-const STAFF_ROLES = new Set(['내부스탭', '외부스탭', '팀장', '행정']);
-const IN_STAFF = ['내부스탭', '팀장', '행정'];
+const STAFF_ROLES = new Set(['부장', '새가족', '내부스탭', '외부스탭', '팀장', '행정']);
+const IN_STAFF = ['부장', '새가족', '내부스탭', '팀장', '행정'];
 // 인원 항목: 앱 계산, 템플릿 수식, 데이터 파일이 모두 이 목록을 쓴다.
 const COUNT_GROUPS = [
   ['반사 교사', '반사·보조교사', [['mFull', '전참 남교사(반사)'], ['mPart', '부분참 남교사(반사)'], ['fFull', '전참 여교사(반사)'], ['fPart', '부분참 여교사(반사)']]],
   ['찬양팀', '참석하는 찬양팀', [['praiseT', '찬양팀 교사'], ['praiseS', '찬양팀 학생']]],
   ['학생', '하루라도 참석하는 학생', [['maleS', '참여 남학생'], ['femaleS', '참여 여학생']]],
-  ['스탭', '내부: 내부스탭·팀장·행정 / 외부: 외부스탭', [['staffIn', '내부 스탭 교사'], ['staffOut', '외부 스탭 교사']]]
+  ['스탭', '내부: 부장·새가족·내부스탭·팀장·행정 / 외부: 외부스탭', [['staffIn', '내부 스탭 교사'], ['staffOut', '외부 스탭 교사']]]
 ];
 const COUNT_ITEMS = COUNT_GROUPS.flatMap(g => g[2]);
 // TF: 엑셀 교사 시트 TF 칸의 구분(드롭다운)과 앱의 TF 직책을 잇는다.
@@ -433,13 +433,13 @@ function ensureGenders(st) {
 function normGender(v) { v = String(v || '').trim().toLowerCase(); if (/^(남|남자|남성|m|male|형제)$/.test(v)) return '남'; if (/^(여|여자|여성|f|female|자매)$/.test(v)) return '여'; return ''; }
 function normRole(v) {
   v = String(v || '').replace(/\s+/g, ''); if (!v) return '기타';
-  if (/보조/.test(v)) return '보조교사'; if (/반사|담임|선생|교사/.test(v)) return '반사'; if (/팀장/.test(v)) return '팀장';
+  if (/보조/.test(v)) return '보조교사'; if (/부장/.test(v)) return '부장'; if (/새가족|새친구/.test(v)) return '새가족'; if (/반사|담임|선생|교사/.test(v)) return '반사'; if (/팀장/.test(v)) return '팀장';
   if (/행정|회계|총무/.test(v)) return '행정'; if (/찬양|워십|반주/.test(v)) return '찬양팀'; if (/외부/.test(v)) return '외부스탭'; if (/스탭|스태프|staff|내부/i.test(v)) return '내부스탭';
   return '기타';
 }
 const yes = v => /^(o|○|●|y|yes|v|✓|✔|예|네|1|true)$/i.test(String(v || '').trim());
 const splitNames = s => String(s || '').split(/[,，、\n]/).map(x => x.trim()).filter(Boolean);
-const roleOrder = r => { const i = ['반사', '보조교사', '팀장', '내부스탭', '외부스탭', '행정', '찬양팀', '기타'].indexOf(r); return i < 0 ? 9 : i; };
+const roleOrder = r => { const i = ['부장', '반사', '보조교사', '새가족', '팀장', '내부스탭', '외부스탭', '행정', '찬양팀', '기타'].indexOf(r); return i < 0 ? 9 : i; };
 const ko = (a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true });
 
 function dates() {
@@ -556,7 +556,7 @@ async function buildTemplate() {
   g.getColumn(1).width = 110;
   [['분당우리교회 주일학교 수련회 반편성 Tool · 명단 템플릿', true], [''], ['1. [기본정보] 시트에 수련회 이름과 시작일·종료일(예: 2027-01-08)을 적습니다.'],
    ['2. [교사] 시트에 모든 선생님을 한 줄에 한 명씩 적습니다. 성별·역할·찬양팀·TF는 칸을 누르면 나오는 목록에서 고릅니다.'],
-   ['   · 역할: 반사 / 보조교사 / 내부스탭 / 외부스탭 / 팀장 / 행정 / 찬양팀 / 기타'],
+   ['   · 역할: 반사 / 보조교사 / 부장 / 새가족 / 내부스탭 / 외부스탭 / 팀장 / 행정 / 찬양팀 / 기타'],
    ['   · 참석: 참석 / 부분참석 / 불참 중에서 고릅니다. 비워 두면 참석으로 봅니다. 부분참석이면 [참석일]에 "1일차, 2일차" 또는 날짜를 적습니다.'],
    ['   · 반사·보조교사는 [담당 학년반]을 꼭 적어 주세요. 학생 시트의 학년반과 같은 이름이어야 합니다(띄어쓰기는 무시).'],
    ['   · 팀장과 팀원은 [팀 이름]을 같게 적으면 한 팀으로 묶입니다.'],
@@ -587,7 +587,7 @@ async function buildTemplate() {
   const t = wb.addWorksheet('교사'); styleSheet(t, T_COLS);
   [['예) 김은혜', '여', '반사', '중1 여1반', '', '', '미디어/예배', '참석', '', ''], ['예) 박성민', '남', '보조교사', '중1 남1반', '', '', '', '부분참석', '2일차, 3일차', ''], ['예) 이준호', '남', '팀장', '', '레크리에이션팀', '', '전체총괄', '참석', '', ''], ['예) 최다은', '여', '외부스탭', '', '레크리에이션팀', 'O', '', '참석', '', '']]
     .forEach(r => { t.addRow(r).font = EX_FONT; });
-  sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role === '기타' ? '' : p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', '', '', '', '']));
+  sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role === '기타' ? '' : p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', tfLabel(tfCatOf(p.id)), '', '', p.note || '']));
   teacherValid(t, T_MAX);
 
   const og = wb.addWorksheet('조직'); styleSheet(og, ORG_COLS);
@@ -671,7 +671,9 @@ function importAttendanceApp(wb, find) {
     else if (/찬양/.test(area)) { role = '찬양팀'; team = '찬양팀'; }
     else if (/예배/.test(area)) { role = '내부스탭'; team = '예배팀'; }
     else if (/행정/.test(area)) { role = '행정'; team = '행정팀'; }
-    else if (/부장|팀장|새가족/.test(sub)) role = '내부스탭';
+    else if (/부장/.test(sub)) role = '부장';
+    else if (/새가족/.test(sub)) role = '새가족';
+    else if (/팀장/.test(sub)) role = '내부스탭';
     else if (/교사|1부|2부/.test(area)) role = '보조교사';
     const t = { id: nid('t'), name, gender, role, cls, team, praise: role === '찬양팀', tf: '', lead: !!team && /팀장/.test(sub) && !/부팀장/.test(sub), note: sub || '' };
     if (role === '보조교사') issues.push(`보조교사 ${name}: 출석부 파일에 담당 반이 없어서 반 배치판 대기석에서 시작해요.`);
