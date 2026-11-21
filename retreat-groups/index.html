@@ -384,6 +384,37 @@ const WD = ['일', '월', '화', '수', '목', '금', '토'];
 const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['attendance', '참석 체크'], ['teams', '팀원 구성'], ['board', '반 배치']];
 
 /* ================= state ================= */
+// 기본 조직도 (TF·팀). 명단을 올리면 같은 이름의 선생님과 자동으로 이어진다.
+const DEFAULT_ORG = `<TF팀>
+전호진 목사님
+기획팀장 : 최주헌T
+예배/미디어 팀장 : 윤준환T
+행정팀장 : 김정나T
+
+<전체 기획팀>
+1. 프로그램팀
+팀장 : 최주헌T
+프로그램 A 팀장 : 천성윤T
+프로그램 B 팀장 : 전하민T(미정)
+프로그램 C 팀장 : 남준성T
+부팀장 : 정기원T
+
+2. 동선팀
+팀장 : 노수연T
+
+3. 찬양팀
+팀장 : 이루다T
+세션팀장 : 양예찬T
+
+4. 미디어팀
+팀장 : 윤준환T
+사진/영상 팀장 : 남준성T
+PPT/디자인 팀장 : 황서현T
+찬양팀 장비 및 음향 팀장 : 양예찬T
+
+5. 행정팀
+팀장 : 김정나T`;
+function applyDefaultOrg() { const o = parseOrg(DEFAULT_ORG); S.info.tfList = o.tf; S.info.teams = o.teams; }
 // 수련회 기본 일정: 2027년 1월 29일(금) ~ 31일(일)
 const RETREAT_START = '2027-01-29', RETREAT_END = '2027-01-31';
 const blank = () => ({ v: 2, sample: false, meta: { title: '', start: RETREAT_START, end: RETREAT_END }, classes: [], teachers: [], students: [],
@@ -976,7 +1007,7 @@ function renderInfo() {
       <details class="paste" ${S.info.tfList.length || S.info.teams.length ? '' : 'open'}><summary>조직도 붙여넣기</summary>
         <p class="hint">아래 모양의 글을 그대로 붙여넣고 <b>적용</b>을 누르면 TF와 팀이 한 번에 들어가요. 지금 TF·팀은 이 내용으로 바뀌어요.</p>
         <textarea class="inp" id="orgPaste" rows="7" placeholder="&lt;TF팀&gt;&#10;홍길동 목사님&#10;기획팀장 : 김철수T&#10;&#10;&lt;전체 기획팀&gt;&#10;1. 프로그램팀&#10;팀장 : 김철수T&#10;부팀장 : 이영희T"></textarea>
-        <div class="row"><span class="spacer"></span><button class="btn small primary" type="button" data-act="orgApply">적용</button></div>
+        <div class="row"><button class="btn small ghost" type="button" data-act="orgDefault">기본 조직도로 되돌리기</button><span class="spacer"></span><button class="btn small primary" type="button" data-act="orgApply">적용</button></div>
       </details>
       <div class="row"><h2>TF</h2><span class="spacer"></span><span class="chip">${S.info.tfList.length}명</span><button class="btn small" type="button" data-act="addTf">+ 직책 추가</button></div>
       <datalist id="tnames">${S.teachers.map(t => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
@@ -1204,6 +1235,7 @@ let drag = null, justDragged = false, delMode = false, verDel = false;
 function init() {
   if (!load() || S.sample) { S = blank(); try { localStorage.removeItem(STORE); } catch (e) {} }
   ensureVersions(S);
+  if (!S.info.tfList.length) { applyDefaultOrg(); save(); }
   const h = location.hash.slice(1); if (STEPS.some(s => s[0] === h)) S.step = h;
   render();
   window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (STEPS.some(s => s[0] === k) && k !== S.step) go(k); });
@@ -1223,6 +1255,7 @@ function init() {
       const a = act.dataset.act;
       if (a === 'template') doDownload('template');
       else if (a === 'addTf') { const r = { id: nid('s'), title: '', who: '', note: '' }; S.info.tfList.push(r); save(); render(); const el = $('#tft-' + r.id); if (el) el.focus(); }
+      else if (a === 'orgDefault') { applyDefaultOrg(); save(); render(); toast('기본 조직도(TF 4명, 팀 5개)로 되돌렸어요.'); }
       else if (a === 'orgApply') { const txt = ($('#orgPaste') || {}).value || ''; const o = parseOrg(txt); if (!o.tf.length && !o.teams.length) { toast('조직도를 읽지 못했어요. <TF팀>, "1. 팀이름", "직책 : 이름" 모양인지 확인해 주세요.'); return; } S.info.tfList = o.tf; S.info.teams = o.teams; save(); render(); const miss = [...o.tf.map(r => r.who), ...o.teams.flatMap(t => [...t.slots.map(x => x.who), ...t.members])].filter(w => w && w.startsWith('n:')).length; toast(`TF ${o.tf.length}명, 팀 ${o.teams.length}개를 넣었어요.${miss ? ` 명단에 없는 이름 ${miss}건은 노랑으로 표시돼요.` : ''}`); }
       else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, slots: [{ id: nid('s'), title: '팀장', who: '', note: '' }], members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
