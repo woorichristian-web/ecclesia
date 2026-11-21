@@ -572,7 +572,7 @@ async function buildTemplate() {
 
   const b = wb.addWorksheet('기본정보'); styleSheet(b, [['항목', 16], ['내용', 32], ['설명', 40]]);
   b.addRow(['수련회 이름', S.meta.title || '', '예: 2027 겨울수련회']); b.addRow(['시작일', new Date((S.meta.start || RETREAT_START) + 'T00:00:00Z'), '예: 2027-01-29']); b.addRow(['종료일', new Date((S.meta.end || RETREAT_END) + 'T00:00:00Z'), '예: 2027-01-31']);
-  ['B3', 'B4'].forEach(a => { b.getCell(a).numFmt = 'yyyy-mm-dd'; b.getCell(a).dataValidation = { type: 'date', operator: 'greaterThan', allowBlank: true, formulae: [new Date(Date.UTC(2000, 0, 1))], showErrorMessage: true, error: '날짜로 적어 주세요. 예: 2027-01-08' }; });
+  ['B3', 'B4'].forEach(a => { b.getCell(a).numFmt = 'yyyy-mm-dd'; b.getCell(a).dataValidation = { type: 'date', operator: 'greaterThanOrEqual', allowBlank: true, formulae: [new Date(Date.UTC(2026, 0, 1))], showErrorMessage: true, error: '2026년 1월 1일 이후 날짜로 적어 주세요. 예: 2027-01-29' }; });
   [2, 3, 4].forEach(r => { b.getCell('C' + r).font = EX_FONT; });
   b.addRow([]);
   const sec = b.addRow(['인원', '교사·학생 시트에서 자동 계산', '']); sec.font = { bold: true };
@@ -962,8 +962,8 @@ function renderInfo() {
       <h2>수련회</h2>
       <div class="fld"><label for="mTitle">수련회 이름</label><input class="inp" id="mTitle" value="${esc(S.meta.title)}" placeholder="예: 2027 겨울수련회"></div>
       <div class="form-grid">
-        <div class="fld"><label for="mStart">시작일</label><input class="inp" type="date" id="mStart" value="${esc(S.meta.start)}"></div>
-        <div class="fld"><label for="mEnd">종료일</label><input class="inp" type="date" id="mEnd" value="${esc(S.meta.end)}"></div>
+        <div class="fld"><label for="mStart">시작일</label><input class="inp" type="date" id="mStart" min="2026-01-01" max="2099-12-31" value="${esc(S.meta.start)}"></div>
+        <div class="fld"><label for="mEnd">종료일</label><input class="inp" type="date" id="mEnd" min="${esc(S.meta.start || '2026-01-01')}" max="2099-12-31" value="${esc(S.meta.end)}"></div>
       </div>
       <p class="hint">기간을 넣으면 참석 체크와 반 배치에 날짜별 탭이 생겨요.</p>
       <h2 style="margin-top:6px">인원</h2>
@@ -1266,7 +1266,7 @@ function init() {
   });
   document.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'mStart' || t.id === 'mEnd') { S.meta[t.id === 'mStart' ? 'start' : 'end'] = t.value; if (t.id === 'mStart' && (!S.meta.end || S.meta.end < t.value)) S.meta.end = t.value; save(); render(); return; }
+    if (t.id === 'mStart' || t.id === 'mEnd') { if (t.value && t.value < '2026-01-01') { toast('2026년부터 고를 수 있어요.'); render(); return; } S.meta[t.id === 'mStart' ? 'start' : 'end'] = t.value; if (t.id === 'mStart' && (!S.meta.end || S.meta.end < t.value)) S.meta.end = t.value; save(); render(); return; }
     if (t.dataset.ov || t.dataset.tfw) render();
   });
 
