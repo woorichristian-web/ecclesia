@@ -221,6 +221,25 @@ body.picking [data-drop] { cursor: pointer; border-style: dashed; border-color: 
 .tslot .empty { font-size: 12px; color: var(--bad); }
 .sslot { padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 56px; align-content: flex-start; }
 .sslot .empty, .tray .empty { font-size: 12px; color: var(--muted); }
+.paste { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; background: var(--sunken); }
+.paste summary { cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.paste[open] { display: flex; flex-direction: column; gap: 8px; }
+.paste textarea { font-size: 13px; }
+.tfrows { display: flex; flex-direction: column; gap: 6px; }
+.tfrow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.tfrow .chip { justify-self: start; }
+@media (max-width: 560px) { .tfrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.slotlist { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.team-tile .pos { flex-direction: column; align-items: flex-start; gap: 4px; }
+.poshead { display: flex; align-items: center; gap: 6px; width: 100%; }
+.posin { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 1px 4px; margin-left: -4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.posin:hover { border-color: var(--line); }
+.posin:focus { outline: 2px solid var(--accent); color: var(--ink); }
+.x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.x:hover { color: var(--bad); }
+.addslot { padding: 2px 8px; border-bottom: 1px dashed var(--line); }
+.pc .cnt { font-size: 10px; border-radius: 3px; padding: 0 4px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pc.ext { border-style: dashed; }
 .team-tile .tslot, .team-tile .sslot { position: relative; transition: background .12s; }
 .slotlab { font-size: 11px; color: var(--muted); width: 100%; letter-spacing: .02em; }
 .team-tile .tslot { border-bottom: 1px dashed var(--line); }
@@ -305,16 +324,68 @@ const COUNT_GROUPS = [
   ['스탭', '내부: 내부스탭·팀장·행정 / 외부: 외부스탭', [['staffIn', '내부 스탭 교사'], ['staffOut', '외부 스탭 교사']]]
 ];
 const COUNT_ITEMS = COUNT_GROUPS.flatMap(g => g[2]);
-const TF_CATS = [['general', '전체총괄'], ['admin', '행정'], ['media', '미디어/예배']];
+// TF: 엑셀 교사 시트 TF 칸의 구분(드롭다운)과 앱의 TF 직책을 잇는다.
+const TF_CATS = [['general', '총괄'], ['plan', '기획'], ['media', '예배/미디어'], ['admin', '행정']];
+const TF_TITLE = { general: '총괄', plan: '기획팀장', media: '예배/미디어 팀장', admin: '행정팀장' };
 const tfLabel = k => (TF_CATS.find(c => c[0] === k) || ['', ''])[1];
-function normTf(v) { v = String(v || '').replace(/\s+/g, ''); if (!v) return ''; if (/미디어|예배|방송|영상/.test(v)) return 'media'; if (/행정|회계|총무/.test(v)) return 'admin'; if (/총괄|전체/.test(v) || yes(v)) return 'general'; return ''; }
-function tfOf(name) { for (const [k] of TF_CATS) if (splitNames(S.info.tf[k]).includes(name)) return k; return ''; }
+function normTf(v) { v = String(v || '').replace(/\s+/g, ''); if (!v) return ''; if (/기획|프로그램/.test(v)) return 'plan'; if (/미디어|예배|방송|영상/.test(v)) return 'media'; if (/행정|회계|총무/.test(v)) return 'admin'; if (/총괄|전체|목사|전도사/.test(v) || yes(v)) return 'general'; return ''; }
+// 조직 사람 표기: 교사 id 또는 'n:이름'(명단에 없는 이름)
+const whoName = w => !w ? '' : w.startsWith('n:') ? w.slice(2) : ((S.teachers.find(t => t.id === w) || {}).name || '');
+function cleanName(raw) {
+  let note = '';
+  let n = String(raw || '').replace(/\(([^)]*)\)/g, (m, x) => { note = x.trim(); return ''; }).trim();
+  const hon = n.match(/\s*(목사님|전도사님|선생님|간사님|목사|전도사|간사)$/); if (hon) { note = note || hon[1]; n = n.slice(0, hon.index).trim(); }
+  n = n.replace(/([가-힣])\s*T$/, '$1').replace(/([가-힣])\s*쌤$/, '$1').trim();
+  return { name: n, note };
+}
+function whoOf(name, teachers) { const n = String(name || '').trim(); if (!n) return ''; const t = (teachers || S.teachers).find(x => x.name === n); return t ? t.id : 'n:' + n; }
+function tfCatOf(teacherId) { const r = S.info.tfList.find(x => x.who === teacherId); return r ? normTf(r.title) : ''; }
+// 붙여넣은 조직도 글 → TF 직책 목록 + 팀(직책 칸)
+function parseOrg(text, teachers) {
+  const tf = [], teams = []; let mode = 'team', team = null;
+  String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+    const sec = line.match(/^[<\[【]\s*(.+?)\s*[>\]】]$/);
+    if (sec) { mode = /TF/i.test(sec[1]) ? 'tf' : 'team'; team = null; return; }
+    const head = line.match(/^\d+\s*[.)]\s*(.+)$/);
+    if (mode === 'team' && head && !/[:：]/.test(head[1])) { team = { id: nid('g'), name: head[1].trim(), slots: [], members: [] }; teams.push(team); return; }
+    const kv = line.match(/^(.+?)\s*[:：]\s*(.+)$/);
+    const title = kv ? kv[1].trim() : '';
+    const names = (kv ? kv[2] : line).split(/[,，、/]/).map(x => x.trim()).filter(Boolean);
+    names.forEach((raw, i) => {
+      const { name, note } = cleanName(raw); if (!name) return;
+      const row = { id: nid('s'), title: title || (mode === 'tf' ? (note && /목사|전도사/.test(note) ? '총괄' : 'TF') : '팀원'), who: whoOf(name, teachers), note };
+      if (mode === 'tf') tf.push(row);
+      else if (team) { if (!kv || /^팀원$/.test(title)) team.members.push(row.who); else team.slots.push(row); }
+    });
+  });
+  return { tf, teams };
+}
+// 명단이 바뀌면(다시 올리기) 이름으로 다시 연결
+function relinkOrg(info, oldTeachers, newTeachers) {
+  const nameOf = w => !w ? '' : w.startsWith('n:') ? w.slice(2) : ((oldTeachers.find(t => t.id === w) || {}).name || '');
+  const fix = w => w ? whoOf(nameOf(w), newTeachers) : '';
+  info.tfList.forEach(r => { r.who = fix(r.who); });
+  info.teams.forEach(t => { t.slots.forEach(x => { x.who = fix(x.who); }); t.members = t.members.map(fix).filter(Boolean); });
+}
+function migrateOrg(info, teachers) {
+  if (!Array.isArray(info.tfList)) {
+    const list = [];
+    if (info.tf && typeof info.tf === 'object') Object.entries(info.tf).forEach(([k, v]) => splitNames(v).forEach(n => list.push({ id: nid('s'), title: TF_TITLE[k] || 'TF', who: whoOf(n, teachers), note: '' })));
+    else if (typeof info.tf === 'string') splitNames(info.tf).forEach(n => list.push({ id: nid('s'), title: 'TF', who: whoOf(n, teachers), note: '' }));
+    info.tfList = list;
+  }
+  delete info.tf;
+  (info.teams || []).forEach(tm => {
+    if (!Array.isArray(tm.slots)) { tm.slots = tm.leader ? [{ id: nid('s'), title: '팀장', who: teachers.some(t => t.id === tm.leader) ? tm.leader : whoOf(tm.leader, teachers), note: '' }] : []; delete tm.leader; }
+    if (!Array.isArray(tm.members)) tm.members = splitNames(tm.members).map(n => whoOf(n, teachers));
+  });
+}
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
 const STEPS = [['roster', '명단 올리기'], ['info', '기본 정보'], ['attendance', '참석 체크'], ['teams', '팀원 구성'], ['board', '반 배치']];
 
 /* ================= state ================= */
 const blank = () => ({ v: 2, sample: false, meta: { title: '', start: '', end: '' }, classes: [], teachers: [], students: [],
-  info: { ov: {}, tf: { general: '', admin: '', media: '' }, teams: [] }, att: {}, plans: {}, versions: [], ver: null, step: 'roster', day: null });
+  info: { ov: {}, tfList: [], teams: [] }, att: {}, plans: {}, versions: [], ver: null, step: 'roster', day: null });
 let S = blank();
 let saveT;
 function ensureVersions(st) {
@@ -328,13 +399,7 @@ function save() { clearTimeout(saveT); saveT = setTimeout(flush, 200); }
 window.addEventListener('pagehide', () => { if (saveT) flush(); });
 function load() {
   try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); ensureVersions(S); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
-    if (typeof S.info.tf === 'string') S.info.tf = { general: S.info.tf, admin: '', media: '' };
-    S.info.tf = Object.assign({ general: '', admin: '', media: '' }, S.info.tf);
-    const byName = n => (S.teachers.find(t => t.name === n) || {}).id;
-    S.info.teams.forEach(tm => {
-      if (tm.leader && !S.teachers.some(t => t.id === tm.leader)) tm.leader = byName(tm.leader) || '';
-      if (!Array.isArray(tm.members)) tm.members = splitNames(tm.members).map(byName).filter(Boolean);
-    }); ensureGenders(S); return true; } catch (e) { return false; }
+    migrateOrg(S.info, S.teachers); ensureGenders(S); return true; } catch (e) { return false; }
 }
 let uid = 0; const nid = p => p + Date.now().toString(36) + (uid++).toString(36);
 
@@ -393,12 +458,42 @@ function attends(id, day) { const a = attOf(id); if (a.s === 'out') return false
 function attendsAny(id) { const a = attOf(id); return a.s === 'in' || (a.s === 'part' && (a.days || []).length > 0); }
 
 function autoInfo(st) {
-  st.info.tf = Object.fromEntries(TF_CATS.map(([k]) => [k, st.teachers.filter(t => t.tf === k).map(t => t.name).join(', ')]));
+  st.info.tfList = st.teachers.filter(t => t.tf).map(t => ({ id: nid('s'), title: TF_TITLE[t.tf] || 'TF', who: t.id, note: '' }));
   const teams = new Map();
-  st.teachers.forEach(t => { if (!t.team) return; if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, leader: '', members: [] }); const g = teams.get(t.team); if ((t.role === '팀장' || t.lead) && !g.leader) g.leader = t.id; else g.members.push(t.id); });
-  st.teachers.filter(t => t.role === '팀장' && !t.team).forEach(t => teams.set('#' + t.id, { id: nid('g'), name: `${t.name} 팀`, leader: t.id, members: [] }));
+  st.teachers.forEach(t => {
+    if (!t.team) return;
+    if (!teams.has(t.team)) teams.set(t.team, { id: nid('g'), name: t.team, slots: [], members: [] });
+    const g = teams.get(t.team);
+    if ((t.role === '팀장' || t.lead) && !g.slots.some(x => x.title === '팀장')) g.slots.push({ id: nid('s'), title: '팀장', who: t.id, note: '' }); else g.members.push(t.id);
+  });
   st.info.teams = [...teams.values()];
 }
+// '조직' 시트(구분·팀·직책·이름·비고)가 있으면 TF와 팀을 그대로 되살린다
+function readOrg(ws, st) {
+  const rows = readSheet(ws); if (!rows.length) return false;
+  const tf = [], teams = new Map();
+  rows.forEach(o => {
+    const kind = cellText(pickCol(o, '구분')); const { name, note: n2 } = cleanName(cellText(pickCol(o, '이름')));
+    const title = cellText(pickCol(o, '직책')); const note = cellText(pickCol(o, '비고')) || n2;
+    if (/^예\)/.test(kind) || /^예\)/.test(cellText(pickCol(o, '이름')))) return;
+    if (/TF/i.test(kind)) { if (name) tf.push({ id: nid('s'), title: title || 'TF', who: whoOf(name, st.teachers), note }); return; }
+    const tname = cellText(pickCol(o, '팀')); if (!tname) return;
+    if (!teams.has(tname)) teams.set(tname, { id: nid('g'), name: tname, slots: [], members: [] });
+    const t = teams.get(tname);
+    if (!title || title === '팀원') { if (name) t.members.push(whoOf(name, st.teachers)); }
+    else t.slots.push({ id: nid('s'), title, who: name ? whoOf(name, st.teachers) : '', note });
+  });
+  if (!tf.length && !teams.size) return false;
+  st.info.tfList = tf; st.info.teams = [...teams.values()];
+  return true;
+}
+function orgRows() {
+  const rows = [];
+  S.info.tfList.forEach(r => rows.push(['TF', '', r.title, whoName(r.who), r.note || '']));
+  S.info.teams.forEach(t => { t.slots.forEach(x => rows.push(['팀', t.name, x.title, whoName(x.who), x.note || ''])); t.members.forEach(w => rows.push(['팀', t.name, '팀원', whoName(w), ''])); if (!t.slots.length && !t.members.length) rows.push(['팀', t.name, '', '', '']); });
+  return rows;
+}
+const ORG_COLS = [['구분', 8], ['팀', 16], ['직책', 22], ['이름', 14], ['비고', 18]];
 
 /* ================= Excel ================= */
 let xlP;
@@ -468,8 +563,10 @@ async function buildTemplate() {
    ['3. [학생] 시트에 학년반, 이름, 성별, 찬양팀(O), 참석을 적습니다. 반은 남녀 따로라서 한 학년반에는 한 성별만 적습니다(예: 중1 남1반, 중1 여1반).'],
    ['   · 반마다 인원은 달라도 됩니다.'],
    ['4. "예)"로 시작하는 줄은 예시라서 올릴 때 무시됩니다. 지우고 쓰셔도 됩니다.'],
-   ['5. [기본정보] 시트의 인원 칸은 교사·학생 시트를 보고 자동으로 계산됩니다.'],
-   ['6. 다 채운 파일을 반편성 화면의 [명단 올리기]에 올립니다.']].forEach(([t, b], i) => { const c = g.getCell('A' + (i + 1)); c.value = t; if (b) c.font = { bold: true, size: 14 }; });
+   ['5. [조직] 시트에 TF 직책과 팀별 직책(팀장, 부팀장, 세션팀장 등)·팀원을 한 줄에 한 명씩 적습니다. 한 사람이 여러 팀에 있어도 됩니다.'],
+   ['   · 구분: TF 또는 팀 / 팀: 팀 이름 / 직책: 팀장·부팀장 등, 일반 팀원은 "팀원" / 비고: 미정 등'],
+   ['6. [기본정보] 시트의 인원 칸은 교사·학생 시트를 보고 자동으로 계산됩니다.'],
+   ['7. 다 채운 파일을 반편성 화면의 [명단 올리기]에 올립니다.']].forEach(([t, b], i) => { const c = g.getCell('A' + (i + 1)); c.value = t; if (b) c.font = { bold: true, size: 14 }; });
 
   const b = wb.addWorksheet('기본정보'); styleSheet(b, [['항목', 16], ['내용', 32], ['설명', 40]]);
   b.addRow(['수련회 이름', '', '예: 2027 중등부 겨울수련회']); b.addRow(['시작일', '', '예: 2027-01-08']); b.addRow(['종료일', '', '예: 2027-01-10']);
@@ -491,6 +588,11 @@ async function buildTemplate() {
   sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role === '기타' ? '' : p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', '', '', '', '']));
   teacherValid(t, T_MAX);
 
+  const og = wb.addWorksheet('조직'); styleSheet(og, ORG_COLS);
+  const cur = orgRows();
+  if (cur.length) cur.forEach(r => og.addRow(r));
+  else [['예) TF', '', '기획팀장', '홍길동', ''], ['예) 팀', '프로그램팀', '팀장', '홍길동', ''], ['예) 팀', '프로그램팀', '프로그램 A 팀장', '김철수', '미정'], ['예) 팀', '프로그램팀', '팀원', '이영희', '']].forEach(r => { og.addRow(r).font = EX_FONT; });
+  listValid(og, 'A', 2, 300, ['TF', '팀']);
   const s = wb.addWorksheet('학생'); styleSheet(s, S_COLS);
   [['중1 남1반', '예) 정하준', '남', 'O', '참석', '', ''], ['중1 여1반', '예) 윤서연', '여', '', '부분참석', '1일차, 2일차', '']].forEach(r => { s.addRow(r).font = EX_FONT; });
   sortedStudents().forEach(p => s.addRow([clsName(p.cls), p.name, p.gender, p.praise ? 'O' : '', '', '', '']));
@@ -585,7 +687,7 @@ function importAttendanceApp(wb, find) {
   if (!st.teachers.length && !st.students.length) throw new Error('empty');
   st.attX = null;
   autoInfo(st); ensureGenders(st);
-  return { st, issues, source: 'app' };
+  return { st, issues, source: 'app', hasOrg: false };
 }
 async function importFile(file) {
   const X = await loadExcel(); const wb = new X.Workbook(); await wb.xlsx.load(await file.arrayBuffer());
@@ -630,6 +732,7 @@ async function importFile(file) {
     if (m && f) issues.push(`${c.name}: 남학생 ${m}명, 여학생 ${f}명이 섞여 있어요. 반은 남녀 따로라서 ${m >= f ? '남' : '여'}학생반으로 보고, 다른 성별 학생은 배치판에서 옮겨 주세요.`);
   });
   autoInfo(st);
+  const hadOrg = readOrg(find(/^조직/), st);
   const plan = find(/^배치/);
   if (plan) {
     const byName = new Map(); st.teachers.forEach(p => byName.set('교사|' + p.name, p)); st.students.forEach(p => byName.set('학생|' + p.name, p));
@@ -653,7 +756,7 @@ async function importFile(file) {
     st.versions.forEach(v => { st.plans = v.plans; ensureGenders(st); }); ensureVersions(st);
   }
   ensureGenders(st);
-  return { st, issues };
+  return { st, issues, hasOrg: hadOrg || st.info.tfList.length > 0 || st.info.teams.length > 0 };
 }
 async function buildData() {
   const X = await loadExcel(); const wb = new X.Workbook(); wb.creator = '분당우리교회 주일학교 수련회 반편성 Tool';
@@ -668,12 +771,13 @@ async function buildData() {
   COUNT_ITEMS.forEach(([k, label]) => b.addRow([label, c[k].v]).getCell(2).alignment = { horizontal: 'left' });
   b.addRow([]);
   b.addRow(['TF', '']).font = { bold: true };
-  TF_CATS.forEach(([k, l]) => b.addRow([`TF · ${l}`, splitNames(S.info.tf[k]).join(', ')]));
+  S.info.tfList.forEach(r => b.addRow([`TF · ${r.title}`, whoName(r.who) + (r.note ? ` (${r.note})` : '')]));
   b.addRow([]); b.addRow(['팀', '']).font = { bold: true };
-  S.info.teams.forEach(tm => b.addRow([`팀 · ${tm.name || '(이름 없음)'}`, `팀장 ${tName(tm.leader) || '-'} / 팀원 ${tm.members.map(tName).join(', ') || '-'}`]));
+  S.info.teams.forEach(tm => b.addRow([`팀 · ${tm.name || '(이름 없음)'}`, [...tm.slots.map(x => `${x.title} ${whoName(x.who) || '-'}${x.note ? `(${x.note})` : ''}`), `팀원 ${tm.members.map(whoName).join(', ') || '-'}`].join(' / ')]));
+  const og = wb.addWorksheet('조직'); styleSheet(og, ORG_COLS); orgRows().forEach(r => og.addRow(r)); listValid(og, 'A', 2, 300, ['TF', '팀']);
 
   const t = wb.addWorksheet('교사'); styleSheet(t, T_COLS);
-  sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', tfLabel(tfOf(p.name)), attText(p.id), attDays(p.id), p.note]));
+  sortedTeachers().forEach(p => t.addRow([p.name, p.gender, p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', tfLabel(tfCatOf(p.id)), attText(p.id), attDays(p.id), p.note]));
   teacherValid(t, S.teachers.length + 50);
   const s = wb.addWorksheet('학생'); styleSheet(s, S_COLS);
   sortedStudents().forEach(p => s.addRow([clsName(p.cls), p.name, p.gender, p.praise ? 'O' : '', attText(p.id), attDays(p.id), p.note]));
@@ -820,7 +924,12 @@ async function handleFile(f) {
   } catch (e) { toast(e && e.message === 'excel' ? '엑셀 도구를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.' : '파일에서 교사·학생 시트를 찾지 못했어요. 템플릿 형식인지 확인해 주세요.'); }
 }
 function applyImport(res) {
-  const step = S.step; S = res.st; ensureVersions(S); S.step = step; S.day = null; lastIssues = res.issues; save(); render();
+  const step = S.step; const old = S;
+  if (!res.hasOrg && (old.info.tfList.length || old.info.teams.length)) {
+    const keep = JSON.parse(JSON.stringify({ tfList: old.info.tfList, teams: old.info.teams }));
+    relinkOrg(keep, old.teachers, res.st.teachers); res.st.info.tfList = keep.tfList; res.st.info.teams = keep.teams;
+  }
+  S = res.st; ensureVersions(S); S.step = step; S.day = null; lastIssues = res.issues; save(); render();
   toast(`교사 ${S.teachers.length}명, 학생 ${S.students.length}명을 불러왔어요.`);
 }
 function showConfirm(html) {
@@ -831,6 +940,11 @@ function showConfirm(html) {
 }
 
 /* ================= step 2 ================= */
+function whoChip(w, note) {
+  if (!w) return '<span class="chips"><span class="chip warn">비어 있음</span></span>';
+  const ok = !w.startsWith('n:');
+  return `<span class="chips"><span class="chip ${ok ? 'ok' : 'warn'}" title="${ok ? '교사 명단에 있음' : '교사 명단에 없는 이름'}">${ok ? '명단 있음' : '명단에 없음'}</span>${note ? `<span class="chip">${esc(note)}</span>` : ''}</span>`;
+}
 function nameChips(str) {
   const names = splitNames(str); if (!names.length) return '';
   const known = new Set(S.teachers.map(t => t.name));
@@ -855,61 +969,83 @@ function renderInfo() {
       ${COUNT_GROUPS.map(([g, note, items]) => `<div class="cgrp"><div class="cgh"><h3>${g}</h3><span class="hint">${note}</span><span class="spacer"></span><span class="chip">합계 <b>${sum(items)}</b></span></div><div class="form-grid">${items.map(fld).join('')}</div></div>`).join('')}
     </section>
     <section class="panel">
-      <div class="row"><h2>TF 명단</h2><span class="spacer"></span><span class="chip">합계 <b>${TF_CATS.reduce((a, [k]) => a + splitNames(S.info.tf[k]).length, 0)}</b></span></div>
-      <p class="hint">항목마다 이름을 쉼표로 구분해 적으세요. 템플릿 교사 시트의 TF 칸에서 고른 선생님은 자동으로 들어와요.</p>
-      ${TF_CATS.map(([k, l]) => `<div class="fld"><label for="tf-${k}">${l}</label><input class="inp" id="tf-${k}" data-tfc="${k}" value="${esc(S.info.tf[k])}" placeholder="이름, 이름"><div id="tfChips-${k}">${nameChips(S.info.tf[k])}</div></div>`).join('')}
-      <p class="hint"><span class="chip ok">초록</span> 교사 명단에 있는 이름, <span class="chip warn">노랑</span> 명단에 없는 이름이에요.</p>
+      <details class="paste" ${S.info.tfList.length || S.info.teams.length ? '' : 'open'}><summary>조직도 붙여넣기</summary>
+        <p class="hint">아래 모양의 글을 그대로 붙여넣고 <b>적용</b>을 누르면 TF와 팀이 한 번에 들어가요. 지금 TF·팀은 이 내용으로 바뀌어요.</p>
+        <textarea class="inp" id="orgPaste" rows="7" placeholder="&lt;TF팀&gt;&#10;홍길동 목사님&#10;기획팀장 : 김철수T&#10;&#10;&lt;전체 기획팀&gt;&#10;1. 프로그램팀&#10;팀장 : 김철수T&#10;부팀장 : 이영희T"></textarea>
+        <div class="row"><span class="spacer"></span><button class="btn small primary" type="button" data-act="orgApply">적용</button></div>
+      </details>
+      <div class="row"><h2>TF</h2><span class="spacer"></span><span class="chip">${S.info.tfList.length}명</span><button class="btn small" type="button" data-act="addTf">+ 직책 추가</button></div>
+      <datalist id="tnames">${S.teachers.map(t => `<option value="${esc(t.name)}"></option>`).join('')}</datalist>
+      ${S.info.tfList.length ? `<div class="tfrows">${S.info.tfList.map(r => `<div class="tfrow"><input class="inp" id="tft-${r.id}" data-tft="${r.id}" value="${esc(r.title)}" placeholder="직책" aria-label="TF 직책"><input class="inp" id="tfw-${r.id}" data-tfw="${r.id}" list="tnames" value="${esc(whoName(r.who))}" placeholder="이름" aria-label="이름">${whoChip(r.who, r.note)}<button class="btn small ghost danger" type="button" data-deltf="${r.id}" aria-label="지우기">지우기</button></div>`).join('')}</div>` : '<p class="hint">아직 TF가 없어요.</p>'}
       <div class="row" style="margin-top:6px"><h2>팀</h2><span class="spacer"></span><button class="btn small" type="button" data-act="addTeam">+ 팀 추가</button></div>
-      <p class="hint">엑셀에서 묶인 팀이 먼저 들어와 있어요. 팀 이름은 여기서 고치고, 팀장·팀원은 참석 체크 다음 <b>팀원 구성</b> 단계에서 정해요.</p>
-      ${S.info.teams.length ? `<div class="tbl-wrap"><table><thead><tr><th>팀</th><th>팀장</th><th>팀원</th><th></th></tr></thead><tbody>${S.info.teams.map(tm => `<tr><td><input class="inp" style="min-width:120px" id="itn-${tm.id}" data-teamname="${tm.id}" value="${esc(tm.name)}" placeholder="팀 이름" aria-label="팀 이름"></td><td>${esc(tName(tm.leader)) || '<span class="flag">없음</span>'}</td><td>${tm.members.length ? `<div class="chips">${tm.members.map(id => `<span class="chip">${esc(tName(id))}</span>`).join('')}</div>` : '<span class="mute">–</span>'}</td><td><button class="btn small ghost danger" type="button" data-delteam="${tm.id}">지우기</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">아직 팀이 없어요. <b>+ 팀 추가</b>를 누르세요.</p>'}
+      <p class="hint">팀 이름은 여기서 고치고, 직책과 팀원은 참석 체크 다음 <b>팀원 구성</b> 단계에서 끌어 놓아 정해요.</p>
+      ${S.info.teams.length ? `<div class="tbl-wrap"><table><thead><tr><th>팀</th><th>직책</th><th>팀원</th><th></th></tr></thead><tbody>${S.info.teams.map(tm => `<tr><td><input class="inp" style="min-width:120px" id="itn-${tm.id}" data-teamname="${tm.id}" value="${esc(tm.name)}" placeholder="팀 이름" aria-label="팀 이름"></td><td>${tm.slots.length ? `<div class="slotlist">${tm.slots.map(x => `<div><span class="mute">${esc(x.title)}</span> ${esc(whoName(x.who)) || '<span class="flag">비어 있음</span>'}${x.note ? ` <span class="chip warn">${esc(x.note)}</span>` : ''}</div>`).join('')}</div>` : '<span class="mute">–</span>'}</td><td>${tm.members.length ? `<div class="chips">${tm.members.map(w => `<span class="chip">${esc(whoName(w))}</span>`).join('')}</div>` : '<span class="mute">–</span>'}</td><td><button class="btn small ghost danger" type="button" data-delteam="${tm.id}">지우기</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">아직 팀이 없어요. <b>+ 팀 추가</b>를 누르거나 조직도를 붙여넣으세요.</p>'}
+      <p class="hint"><span class="chip ok">초록</span> 교사 명단에 있는 이름, <span class="chip warn">노랑</span> 명단에 없는 이름이에요. 명단을 올리면 같은 이름끼리 자동으로 이어져요.</p>
     </section>
   </div>
   <div class="row" style="margin-top:16px"><button class="btn" type="button" data-go="roster">← 명단</button><span class="spacer"></span><button class="btn primary" type="button" data-go="attendance">다음: 참석 체크 →</button></div>`;
 }
 /* ================= step 4: teams ================= */
+function teamCount(w) { return S.info.teams.reduce((a, t) => a + (t.slots.some(x => x.who === w) || t.members.includes(w) ? 1 : 0), 0); }
+function whoStone(w) {
+  if (!w) return '';
+  if (w.startsWith('n:')) return stone({ id: w, name: w.slice(2), gender: '', role: '' }, true, '', false).replace('class="pc ', 'class="pc ext ').replace('</span></span>', '</span><span class="rl">명단에 없음</span></span>');
+  const t = S.teachers.find(x => x.id === w); if (!t) return '';
+  const html = stone(t, true, '', false);
+  return attendsAny(w) ? html : html.replace('class="pc ', 'class="pc gone ').replace('</span></span>', '</span><span class="rl">불참</span></span>');
+}
 function renderTeams() {
-  const inTeam = new Set(S.info.teams.flatMap(t => [t.leader, ...t.members]).filter(Boolean));
-  const free = sortedTeachers().filter(t => !inTeam.has(t.id) && attendsAny(t.id));
-  const absentFree = sortedTeachers().filter(t => !inTeam.has(t.id) && !attendsAny(t.id)).length;
-  const tStone = id => { const t = S.teachers.find(x => x.id === id); if (!t) return ''; const html = stone(t, true, '', false); return attendsAny(id) ? html : html.replace('class="pc ', 'class="pc gone ').replace('</span></span>', '</span><span class="rl">불참</span></span>'); };
+  const inTeam = new Set(S.info.teams.flatMap(t => [...t.slots.map(x => x.who), ...t.members]).filter(Boolean));
+  const all = sortedTeachers().filter(t => attendsAny(t.id));
+  const free = all.filter(t => !inTeam.has(t.id));
+  const absent = S.teachers.length - all.length;
+  const trayStone = t => { const n = teamCount(t.id); const h = stone(t, true, '', false); return n ? h.replace('</span></span>', `</span><span class="cnt">${n}팀</span></span>`) : h; };
+  const tStone = whoStone;
   $('#view').innerHTML = `
   <div class="stack" style="gap:12px">
     <div class="boardbar">
-      <div class="kpis"><div><b>${S.info.teams.length}</b><span>개 팀</span></div><div><b>${inTeam.size}</b><span>명 배치</span></div><div><b>${free.length}</b><span>명 대기</span></div></div>
+      <div class="kpis"><div><b>${S.info.teams.length}</b><span>개 팀</span></div><div><b>${inTeam.size}</b><span>명 배치</span></div><div><b>${free.length}</b><span>명 팀 없음</span></div></div>
       <span class="spacer"></span>
       <button class="btn small" type="button" data-act="addTeam">+ 팀 추가</button>
     </div>
-    <div class="legend"><span>선생님을 끌어 <b>팀장</b> 칸이나 <b>팀원</b> 칸에 놓으세요. 휴대폰은 눌러서 고른 뒤 놓을 칸을 누르면 돼요. 팀장 칸에 다른 사람을 놓으면 원래 팀장은 팀원으로 내려가요.</span></div>
+    <div class="legend"><span>왼쪽 명단에서 선생님을 끌어 <b>직책</b> 칸이나 <b>팀원</b> 칸에 놓으세요. 명단에서 끌면 복사돼서 한 사람이 여러 팀에 들어갈 수 있어요. 팀 안의 이름을 끌면 옮겨지고, 왼쪽 명단에 놓으면 그 자리에서 빠져요. 휴대폰은 눌러서 고른 뒤 놓을 칸을 누르면 돼요.</span></div>
     <div class="board">
       <aside class="tray" data-drop="">
-        <header><h3>팀 없는 선생님</h3><span class="hint">${free.length}명</span></header>
+        <header><h3>선생님 명단</h3><span class="hint">${all.length}명</span></header>
         <div class="body">
-          <div class="stones">${free.map(t => stone(t, true, '', false)).join('') || '<span class="empty">모두 팀에 들어갔어요</span>'}</div>
-          ${absentFree ? `<span class="hint">불참 선생님 ${absentFree}명은 빼고 보여요.</span>` : ''}
+          ${free.length ? `<div class="lab">팀 없음 · ${free.length}명</div><div class="stones">${free.map(trayStone).join('')}</div>` : ''}
+          ${all.length - free.length ? `<div class="lab">팀 있음 · ${all.length - free.length}명</div><div class="stones">${all.filter(t => inTeam.has(t.id)).map(trayStone).join('')}</div>` : ''}
+          ${!all.length ? '<span class="empty">명단을 먼저 올려 주세요</span>' : ''}
+          ${absent ? `<span class="hint">불참 선생님 ${absent}명은 빼고 보여요.</span>` : ''}
         </div>
       </aside>
       <div class="tiles">${S.info.teams.map(tm => `
         <section class="tile team-tile">
           <header>
             <div class="tname"><input id="tmn-${tm.id}" data-teamname="${tm.id}" value="${esc(tm.name)}" placeholder="팀 이름" aria-label="팀 이름"><button class="btn small ghost danger" type="button" data-delteam="${tm.id}">지우기</button></div>
-            <div class="tcount"><span>팀원 <b>${tm.members.length}</b></span>${tm.leader ? '' : '<span class="flag">팀장 없음</span>'}</div>
+            <div class="tcount"><span>직책 <b>${tm.slots.length}</b></span><span>팀원 <b>${tm.members.length}</b></span>${tm.slots.some(x => /팀장/.test(x.title) && x.who) ? '' : '<span class="flag">팀장 없음</span>'}</div>
           </header>
-          <div class="tslot" data-drop="${tm.id}:leader"><span class="slotlab">팀장</span>${tm.leader ? tStone(tm.leader) : '<span class="empty">여기에 놓으세요</span>'}</div>
-          <div class="sslot" data-drop="${tm.id}:member"><span class="slotlab">팀원</span>${tm.members.map(tStone).join('') || '<span class="empty">여기에 놓으세요</span>'}</div>
+          ${tm.slots.map(x => `<div class="tslot pos" data-drop="${tm.id}:s:${x.id}"><div class="poshead"><input class="posin" id="pt-${x.id}" data-slottitle="${tm.id}:${x.id}" value="${esc(x.title)}" placeholder="직책" aria-label="직책 이름">${x.note ? `<span class="chip warn">${esc(x.note)}</span>` : ''}<button class="x" type="button" data-delslot="${tm.id}:${x.id}" aria-label="직책 지우기">×</button></div>${x.who ? tStone(x.who) : '<span class="empty">여기에 놓으세요</span>'}</div>`).join('')}
+          <div class="addslot"><button class="btn small ghost" type="button" data-addslot="${tm.id}">+ 직책 추가</button></div>
+          <div class="sslot" data-drop="${tm.id}:m"><span class="slotlab">팀원</span>${tm.members.map(tStone).join('') || '<span class="empty">여기에 놓으세요</span>'}</div>
         </section>`).join('') || '<p class="hint">아직 팀이 없어요. <b>+ 팀 추가</b>를 누르세요.</p>'}</div>
     </div>
     <div class="row"><button class="btn" type="button" data-go="attendance">← 참석 체크</button><span class="spacer"></span><button class="btn primary" type="button" data-go="board">다음: 반 배치 →</button></div>
   </div>`;
 }
-function teamMove(pid, target) {
-  S.info.teams.forEach(t => { if (t.leader === pid) t.leader = ''; t.members = t.members.filter(x => x !== pid); });
+// from/target: '' = 왼쪽 명단, 'tid:m' = 팀원 칸, 'tid:s:slotId' = 직책 칸
+function teamMove(pid, target, from) {
+  if (from === target) { sel = null; $('#selbar').hidden = true; render(); return; }
+  const loc = k => { const [tid, kind, sid] = String(k || '').split(':'); const t = S.info.teams.find(x => x.id === tid); return { t, kind, slot: t && kind === 's' ? t.slots.find(x => x.id === sid) : null }; };
+  if (from) { const f = loc(from); if (f.slot && f.slot.who === pid) f.slot.who = ''; else if (f.t && f.kind === 'm') f.t.members = f.t.members.filter(x => x !== pid); }
   if (target) {
-    const [tid, slot] = target.split(':'); const t = S.info.teams.find(x => x.id === tid);
-    if (t) { if (slot === 'leader') { if (t.leader) t.members.unshift(t.leader); t.leader = pid; } else t.members.push(pid); }
+    const d = loc(target);
+    if (d.slot) { const prev = d.slot.who; d.slot.who = pid; if (prev && prev !== pid && !d.t.members.includes(prev)) d.t.members.push(prev); d.t.members = d.t.members.filter(x => x !== pid); }
+    else if (d.t && !d.t.members.includes(pid) && !d.t.slots.some(x => x.who === pid)) d.t.members.push(pid);
   }
-  sel = null; $('#selbar').hidden = true; save(); render();
+  sel = null; selFrom = ''; $('#selbar').hidden = true; save(); render();
 }
-const dropTo = (pid, target) => S.step === 'teams' ? teamMove(pid, target) : moveTo(pid, target);
+const dropTo = (pid, target, from) => S.step === 'teams' ? teamMove(pid, target, from || '') : moveTo(pid, target);
 
 /* ================= step 3 ================= */
 let attFilter = '', attTab = 'class';
@@ -1041,10 +1177,11 @@ function spread() {
 
 /* ================= interactions ================= */
 let sel = null;
-function setSel(pid) {
-  sel = pid; render(); markNoDrop(pid);
+let selFrom = '';
+function setSel(pid, from) {
+  sel = pid; selFrom = from || ''; render(); markNoDrop(pid);
   $('#selbar').hidden = !pid;
-  if (pid) { const p = [...S.teachers, ...S.students].find(x => x.id === pid); $('#selText').textContent = `${p ? p.name : ''} 선택됨 · 옮길 반이나 대기석을 누르세요`; }
+  if (pid) { const p = [...S.teachers, ...S.students].find(x => x.id === pid); const nm = p ? p.name : (pid.startsWith('n:') ? pid.slice(2) : ''); $('#selText').textContent = S.step === 'teams' ? `${nm} 선택됨 · 넣을 직책·팀원 칸을 누르세요` : `${nm} 선택됨 · 옮길 반이나 대기석을 누르세요`; }
 }
 let toastT;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
@@ -1081,7 +1218,9 @@ function init() {
     if (act) {
       const a = act.dataset.act;
       if (a === 'template') doDownload('template');
-      else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, leader: '', members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
+      else if (a === 'addTf') { const r = { id: nid('s'), title: '', who: '', note: '' }; S.info.tfList.push(r); save(); render(); const el = $('#tft-' + r.id); if (el) el.focus(); }
+      else if (a === 'orgApply') { const txt = ($('#orgPaste') || {}).value || ''; const o = parseOrg(txt); if (!o.tf.length && !o.teams.length) { toast('조직도를 읽지 못했어요. <TF팀>, "1. 팀이름", "직책 : 이름" 모양인지 확인해 주세요.'); return; } S.info.tfList = o.tf; S.info.teams = o.teams; save(); render(); const miss = [...o.tf.map(r => r.who), ...o.teams.flatMap(t => [...t.slots.map(x => x.who), ...t.members])].filter(w => w && w.startsWith('n:')).length; toast(`TF ${o.tf.length}명, 팀 ${o.teams.length}개를 넣었어요.${miss ? ` 명단에 없는 이름 ${miss}건은 노랑으로 표시돼요.` : ''}`); }
+      else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, slots: [{ id: nid('s'), title: '팀장', who: '', note: '' }], members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
       else if (a === 'addVer') { const n = Math.max(0, ...S.versions.map(v => parseInt(String(v.name).replace(/\D/g, ''), 10) || 0)) + 1; const v = { id: nid('v'), name: `Ver.${n}`, plans: JSON.parse(JSON.stringify(S.plans)) }; const from = curVer().name; S.versions.push(v); S.ver = v.id; S.plans = v.plans; verDel = false; save(); render(); toast(`${from}을(를) 복사해 ${v.name}을(를) 만들었어요. 이제 ${v.name}에서 옮기면 ${from}은(는) 그대로 남아요.`); }
@@ -1093,7 +1232,10 @@ function init() {
       else if (a === 'spread') spread();
       return;
     }
-    const del = t.closest('[data-delteam]'); if (del) { S.info.teams = S.info.teams.filter(x => x.id !== del.dataset.delteam); save(); render(); toast('팀을 지웠어요. 팀원은 팀 없는 선생님으로 돌아갔어요.'); return; }
+    const dtf = t.closest('[data-deltf]'); if (dtf) { S.info.tfList = S.info.tfList.filter(r => r.id !== dtf.dataset.deltf); save(); render(); return; }
+    const ads = t.closest('[data-addslot]'); if (ads) { const tm = S.info.teams.find(x => x.id === ads.dataset.addslot); if (tm) { const x = { id: nid('s'), title: '', who: '', note: '' }; tm.slots.push(x); save(); render(); const el = $('#pt-' + x.id); if (el) el.focus(); } return; }
+    const dls = t.closest('[data-delslot]'); if (dls) { const [tid, sid] = dls.dataset.delslot.split(':'); const tm = S.info.teams.find(x => x.id === tid); if (tm) { tm.slots = tm.slots.filter(x => x.id !== sid); save(); render(); } return; }
+    const del = t.closest('[data-delteam]'); if (del) { S.info.teams = S.info.teams.filter(x => x.id !== del.dataset.delteam); save(); render(); toast('팀을 지웠어요.'); return; }
     const un = t.closest('[data-unov]'); if (un) { delete S.info.ov[un.dataset.unov]; save(); render(); return; }
     const dg = t.closest('[data-delgroup]'); if (dg) { const pl = plan(S.day); const id = dg.dataset.delgroup; const g0 = pl.groups.find(g => g.id === id); pl.groups = pl.groups.filter(g => g.id !== id); for (const k in pl.at) if (pl.at[k] === id) pl.at[k] = ''; save(); render(); toast(`${g0 ? g0.name : '반'}을(를) 이 날짜 배치에서 지웠어요. 그 반 사람들은 대기석으로 갔어요.`); return; }
     const atb = t.closest('[data-atttab]'); if (atb) { attTab = atb.dataset.atttab; render(); return; }
@@ -1105,8 +1247,8 @@ function init() {
     if (S.step === 'board' || S.step === 'teams') {
       if (t.closest('input')) return;
       const pc = t.closest('.pc[data-pid]');
-      if (pc) { const pid = pc.dataset.pid; if (sel && sel !== pid) dropTo(sel, pc.closest('[data-drop]').dataset.drop); else setSel(sel === pid ? null : pid); return; }
-      const dz = t.closest('[data-drop]'); if (dz && sel) dropTo(sel, dz.dataset.drop);
+      if (pc) { const pid = pc.dataset.pid; const here = pc.closest('[data-drop]').dataset.drop; if (sel && sel !== pid) dropTo(sel, here, selFrom); else setSel(sel === pid ? null : pid, here); return; }
+      const dz = t.closest('[data-drop]'); if (dz && sel) dropTo(sel, dz.dataset.drop, selFrom);
     }
   });
   document.addEventListener('keydown', e => { const pc = e.target.closest && e.target.closest('.pc[data-pid]'); if (pc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pc.click(); } });
@@ -1114,21 +1256,24 @@ function init() {
     const t = e.target;
     if (t.id === 'mTitle') { S.meta.title = t.value; save(); setSub(); return; }
     if (t.dataset.ov) { if (t.value === '') delete S.info.ov[t.dataset.ov]; else S.info.ov[t.dataset.ov] = t.value; save(); return; }
-    if (t.dataset.tfc) { S.info.tf[t.dataset.tfc] = t.value; save(); $('#tfChips-' + t.dataset.tfc).innerHTML = nameChips(t.value); return; }
+    if (t.dataset.tft) { const r = S.info.tfList.find(x => x.id === t.dataset.tft); if (r) { r.title = t.value; save(); } return; }
+    if (t.dataset.tfw) { const r = S.info.tfList.find(x => x.id === t.dataset.tfw); if (r) { r.who = whoOf(t.value); save(); } return; }
+    if (t.dataset.slottitle) { const [tid, sid] = t.dataset.slottitle.split(':'); const tm = S.info.teams.find(x => x.id === tid); const x = tm && tm.slots.find(y => y.id === sid); if (x) { x.title = t.value; save(); } return; }
     if (t.dataset.teamname) { const tm = S.info.teams.find(x => x.id === t.dataset.teamname); if (tm) { tm.name = t.value; save(); } return; }
     if (t.dataset.gname) { const g = plan(S.day).groups.find(x => x.id === t.dataset.gname); if (g) { g.name = t.value; save(); } }
   });
   document.addEventListener('change', e => {
     const t = e.target;
     if (t.id === 'mStart' || t.id === 'mEnd') { S.meta[t.id === 'mStart' ? 'start' : 'end'] = t.value; if (t.id === 'mStart' && (!S.meta.end || S.meta.end < t.value)) S.meta.end = t.value; save(); render(); return; }
-    if (t.dataset.ov) render();
+    if (t.dataset.ov || t.dataset.tfw) render();
   });
 
   document.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch' || e.button !== 0 || (S.step !== 'board' && S.step !== 'teams')) return;
     const pc = e.target.closest('.pc[data-pid]'); if (!pc) return;
     const r = pc.getBoundingClientRect();
-    drag = { pid: pc.dataset.pid, el: pc, x0: e.clientX, y0: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, started: false, ghost: null, over: null };
+    const fromZ = pc.closest('[data-drop]');
+    drag = { pid: pc.dataset.pid, from: fromZ ? fromZ.dataset.drop : '', el: pc, x0: e.clientX, y0: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, started: false, ghost: null, over: null };
   });
   document.addEventListener('pointermove', e => {
     if (!drag) return;
@@ -1151,7 +1296,7 @@ function init() {
     if (!d.started) return;
     justDragged = true; setTimeout(() => { justDragged = false; }, 0);
     markNoDrop(null); d.ghost.remove(); d.el.classList.remove('lift'); if (d.over) d.over.classList.remove('over');
-    if (d.over) dropTo(d.pid, d.over.dataset.drop);
+    if (d.over) dropTo(d.pid, d.over.dataset.drop, d.from);
   });
   document.addEventListener('pointercancel', () => { if (drag && drag.ghost) { drag.ghost.remove(); drag.el.classList.remove('lift'); } drag = null; document.body.style.cursor = ''; });
 }
