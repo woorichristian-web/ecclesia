@@ -286,6 +286,37 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
 @media (max-width: 640px) { .syncgrid { grid-template-columns: minmax(0, 1fr); } }
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .switch input { accent-color: var(--accent); width: 16px; height: 16px; }
+/* 반 카드 */
+.tiles.cardgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.tile.card > header { padding: 12px 14px 10px; gap: 6px; border-radius: 12px 12px 0 0; }
+.tile.card.m > header { background: var(--male-soft); box-shadow: inset 0 4px 0 var(--male); }
+.tile.card.f > header { background: var(--female-soft); box-shadow: inset 0 4px 0 var(--female); }
+.tile.card .tname input { font-size: 17px; }
+.cardmeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12.5px; }
+.cardmeta .big { font-size: 13px; color: var(--muted); }
+.cardmeta .big b { font-family: var(--f-num); font-size: 20px; font-weight: 500; color: var(--ink); margin-right: 1px; }
+.tslot.cards { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 12px; }
+.sslot.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 10px 12px 12px; }
+.sslot.cards .slotlab, .sslot.cards .empty { grid-column: 1 / -1; }
+.pc.tcard, .pc.scard { height: auto; width: 100%; border-radius: 10px; max-width: none; }
+.pc.tcard { padding: 8px 10px; gap: 10px; background: var(--stone); }
+.pc.tcard .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 700; background: var(--stone-ink); color: var(--stone); flex: none; }
+.pc.tcard.m .av { color: var(--male); } .pc.tcard.f .av { color: var(--female); }
+.pc.tcard .who2 { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.pc.tcard .who2 b { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc.tcard .who2 small { font-size: 11.5px; font-weight: 400; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc.tcard.off { background: transparent; }
+.pc.tcard.off .av { background: var(--sunken); color: var(--muted); }
+.pc.tcard.off .who2 b { text-decoration: line-through; }
+.pc.scard { padding: 5px 8px 5px 6px; gap: 6px; background: var(--surface); border-color: var(--line); min-width: 0; }
+.pc.scard .no { font-family: var(--f-num); font-size: 10.5px; color: var(--muted); width: 16px; text-align: right; flex: none; }
+.pc.scard .av { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; background: var(--sunken); color: var(--muted); border: 1px solid var(--line); }
+.pc.scard.m .av { background: var(--male-soft); color: var(--male); border-color: var(--male); }
+.pc.scard.f .av { background: var(--female-soft); color: var(--female); border-color: var(--female); }
+.pc.scard .nm { flex: 1; min-width: 0; font-size: 13px; }
+.pc .tg { font-style: normal; font-size: 10px; border-radius: 3px; padding: 0 4px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.pc .tg.mv { background: var(--sunken); color: var(--muted); font-family: var(--f-num); max-width: 64px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .sslot.cards { grid-template-columns: minmax(0, 1fr); } }
 .dragghost { position: fixed; z-index: 60; pointer-events: none; box-shadow: 0 10px 24px rgba(0,0,0,.25); transform: rotate(-3deg) scale(1.05); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); align-items: center; }
@@ -1337,21 +1368,35 @@ function renderBoard() {
         </div>
       </aside>
       <div class="gsecs">${['남', '여', ''].map(g => { const list = L.groups.filter(x => (x.g.gender || '') === g); if (!list.length) return ''; const n = list.reduce((a, x) => a + x.students.length, 0);
-        return `<section class="gsec ${gCode(g)}"><h3><i class="bar"></i>${g ? gLabel(g) : '구분 없는 반'}<span>${list.length}개 반 · 학생 ${n}명</span></h3><div class="tiles">${list.map(tile).join('')}</div></section>`; }).join('') || '<p class="hint">반이 없어요. 명단을 올리거나 반을 추가하세요.</p>'}</div>
+        return `<section class="gsec ${gCode(g)}"><h3><i class="bar"></i>${g ? gLabel(g) : '구분 없는 반'}<span>${list.length}개 반 · 학생 ${n}명</span></h3><div class="tiles cardgrid">${list.map(tile).join('')}</div></section>`; }).join('') || '<p class="hint">반이 없어요. 명단을 올리거나 반을 추가하세요.</p>'}</div>
     </div>
   </div>`;
+}
+// 반 카드: 위에 반 이름·인원, 가운데 선생님 프로필, 아래 학생 카드 목록
+function personCard(p, isT, here, off, n) {
+  const moved = here && p.cls && here !== p.cls && (!isT || CLASS_ROLES.has(p.role));
+  const attrs = off ? 'aria-disabled="true"' : `data-pid="${p.id}" tabindex="0" role="button"`;
+  const tip = ` title="${esc(p.name)}${p.cls ? ' · 원래 ' + esc(clsName(p.cls)) : ''}${isT ? ' · ' + esc(p.role) : ''}${off ? ' · 이날 불참' : ''}"`;
+  const cls = `pc ${isT ? 't tcard' : 'scard'} ${gCode(p.gender)}${off ? ' off' : ''}${sel === p.id ? ' sel' : ''}`;
+  if (isT) {
+    const sub = [p.role === '반사' ? '반사' : p.role, moved ? `원래 ${clsName(p.cls)}` : '', off ? '이날 불참' : ''].filter(Boolean).join(' · ');
+    return `<div class="${cls}" ${attrs}${tip}><span class="av">${esc(p.name.slice(0, 1))}</span><span class="who2"><b class="nm">${esc(p.name)}</b><small>${esc(sub)}</small></span></div>`;
+  }
+  const tags = [p.praise ? '<i class="tg">찬양</i>' : '', moved ? `<i class="tg mv">${esc(clsName(p.cls))}</i>` : ''].join('');
+  return `<div class="${cls}" ${attrs}${tip}><span class="no">${n}</span><span class="av">${esc(p.name.slice(0, 1))}</span><span class="nm">${esc(p.name)}</span>${tags}</div>`;
 }
 function tile(x) {
   const m = x.students.filter(s => s.gender === '남').length, f = x.students.filter(s => s.gender === '여').length;
   const noT = !x.teachers.length && x.students.length;
   const canDel = delMode;
-  return `<section data-g="${esc(x.g.gender || '')}" class="tile ${gCode(x.g.gender)}${noT ? ' noteacher' : ''}" data-drop="${x.g.id}">
+  const gl = x.g.gender === '남' ? '남학생반' : x.g.gender === '여' ? '여학생반' : '';
+  return `<section data-g="${esc(x.g.gender || '')}" class="tile card ${gCode(x.g.gender)}${noT ? ' noteacher' : ''}" data-drop="${x.g.id}">
     <header>
       <div class="tname"><input id="gn-${x.g.id}" data-gname="${x.g.id}" value="${esc(x.g.name)}" aria-label="반 이름">${canDel ? `<button class="btn small ghost danger" type="button" data-delgroup="${x.g.id}">이 반 삭제</button>` : ''}</div>
-      <div class="tcount"><span>교사 <b>${x.teachers.length}</b></span><span>학생 <b>${x.students.length}</b></span>${x.g.gender ? `<span class="badge ${gCode(x.g.gender)}">${x.g.gender}</span>` : ''}${m && f ? '<span class="flag soft">남녀 섞임</span>' : ''}${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
+      <div class="cardmeta">${gl ? `<span class="badge ${gCode(x.g.gender)}">${gl}</span>` : ''}<span class="big"><b>${x.students.length}</b>명</span><span class="mute">선생님 ${x.teachers.length}</span>${m && f ? '<span class="flag soft">남녀 섞임</span>' : ''}${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
     </header>
-    <div class="tslot">${x.teachers.map(p => stone(p, true, x.g.id, false)).join('')}${x.offTeachers.map(p => stone(p, true, x.g.id, true)).join('')}${!x.teachers.length && !x.offTeachers.length ? '<span class="empty">선생님을 끌어 놓으세요</span>' : ''}</div>
-    <div class="sslot">${x.students.map(p => stone(p, false, x.g.id, false)).join('') || '<span class="empty">학생 없음</span>'}</div>
+    <div class="tslot cards"><span class="slotlab">선생님</span>${x.teachers.map(p => personCard(p, true, x.g.id, false)).join('')}${x.offTeachers.map(p => personCard(p, true, x.g.id, true)).join('')}${!x.teachers.length && !x.offTeachers.length ? '<span class="empty">선생님을 끌어 놓으세요</span>' : ''}</div>
+    <div class="sslot cards"><span class="slotlab">학생 ${x.students.length}명</span>${x.students.map((p, i) => personCard(p, false, x.g.id, false, i + 1)).join('') || '<span class="empty">학생을 끌어 놓으세요</span>'}</div>
     ${x.offStudents.length ? `<div class="absent">이날 불참 ${x.offStudents.length}명 · ${x.offStudents.map(p => esc(p.name)).join(', ')}</div>` : ''}
   </section>`;
 }
