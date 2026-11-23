@@ -279,6 +279,17 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
 @media (max-width: 640px) { .syncgrid { grid-template-columns: minmax(0, 1fr); } }
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .switch input { accent-color: var(--accent); width: 16px; height: 16px; }
+/* 일차별 선생님 변경 */
+.chgpanel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.chgpanel h3 { font-size: 14.5px; }
+.chgpanel .bad, .cardchg .bad { color: var(--bad); }
+.chgtbl td { vertical-align: middle; }
+.chgtbl tr.pending td { background: var(--bad-soft); }
+.chgtbl .arrow { color: var(--muted); font-weight: 600; text-align: center; padding-inline: 2px; }
+.inp.sm { padding: 4px 8px; font-size: 12.5px; width: auto; max-width: 100%; }
+.cardchg { margin: 0 12px; padding: 6px 10px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.cardchg .pending { color: var(--bad); }
+.pc .tg.pt { background: var(--warn-soft); color: var(--warn); font-family: var(--f-num); }
 /* 반 카드 */
 .tiles.cardgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .tile.card > header { padding: 12px 14px 10px; gap: 6px; border-radius: 12px 12px 0 0; }
@@ -464,10 +475,19 @@ const blank = () => ({ v: 2, sample: false, meta: { title: '', start: RETREAT_ST
   info: { ov: {}, tfList: [], teams: [] }, att: {}, plans: {}, versions: [], ver: null, step: 'roster', day: null });
 let S = blank();
 let saveT;
+// 반 배치는 수련회 전체를 하나의 구성('base')으로 짜고, 날짜별로는 선생님 변경만 기록한다.
+const BASE = 'base';
+const BASE_DAY = { key: BASE, label: '반배치', short: '' };
 function ensureVersions(st) {
   if (!Array.isArray(st.versions) || !st.versions.length) st.versions = [{ id: 'v1', name: 'Ver.1', plans: st.plans || {} }];
+  st.versions.forEach(v => {
+    v.plans = v.plans || {};
+    if (!v.plans[BASE]) { const keys = Object.keys(v.plans).filter(k => k !== BASE).sort(); if (keys.length) v.plans[BASE] = JSON.parse(JSON.stringify(v.plans[keys[0]])); }
+    Object.keys(v.plans).forEach(k => { if (k !== BASE) delete v.plans[k]; });
+    if (!Array.isArray(v.changes)) v.changes = [];
+  });
   const cur = st.versions.find(v => v.id === st.ver) || st.versions[0];
-  st.ver = cur.id; st.plans = cur.plans;
+  st.ver = cur.id; st.plans = cur.plans; st.day = BASE;
 }
 const curVer = () => S.versions.find(v => v.id === S.ver);
 function flush() { clearTimeout(saveT); saveT = null; try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { plans: undefined }))); } catch (e) {} }
@@ -530,7 +550,7 @@ function dates() {
   return out;
 }
 function attOf(id) { return S.att[id] || { s: 'in', days: [] }; }
-function attends(id, day) { const a = attOf(id); if (a.s === 'out') return false; if (a.s === 'in') return true; if (day === 'all') return (a.days || []).length > 0; return (a.days || []).includes(day); }
+function attends(id, day) { if (day === BASE) return attendsAny(id); const a = attOf(id); if (a.s === 'out') return false; if (a.s === 'in') return true; if (day === 'all') return (a.days || []).length > 0; return (a.days || []).includes(day); }
 function attendsAny(id) { const a = attOf(id); return a.s === 'in' || (a.s === 'part' && (a.days || []).length > 0); }
 
 function autoInfo(st) {
@@ -695,11 +715,11 @@ function toISODate(v) {
   const s = cellText(v); const m = s.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
   return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
 }
-function readSheet(ws) {
+function readSheet(ws, headRe) {
   if (!ws) return [];
   const rows = [];
   ws.eachRow({ includeEmpty: false }, row => { rows.push(row.values); });
-  const hi = rows.findIndex(r => r.some(v => /^(이름|성명)$/.test(cellText(v))));
+  const hi = rows.findIndex(r => r.some(v => (headRe || /^(이름|성명)$/).test(cellText(v))));
   if (hi < 0) return [];
   const head = []; rows[hi].forEach((v, i) => { head[i] = cellText(v); });
   return rows.slice(hi + 1).map(r => { const o = {}; head.forEach((h, i) => { if (h) o[h] = r[i]; }); return o; });
@@ -819,7 +839,7 @@ async function importFile(file) {
       const vname = cellText(pickCol(o, '버전')) || 'Ver.1';
       if (!verMap.has(vname)) verMap.set(vname, { id: nid('v'), name: vname, plans: {} });
       st.plans = verMap.get(vname).plans;
-      const raw = pickCol(o, '날짜'); const day = cellText(raw) === '전체 일정' ? 'all' : toISODate(raw); if (!day) return;
+      const raw = pickCol(o, '날짜'); const rawT = cellText(raw); const day = !rawT || /^전체/.test(rawT) ? BASE : toISODate(raw); if (!day) return;
       const p = byName.get(cellText(pickCol(o, '구분')) + '|' + cellText(pickCol(o, '이름'))); if (!p) return;
       const gname = cellText(pickCol(o, '반'));
       const pl = st.plans[day] || (st.plans[day] = { groups: [], at: {} });
@@ -832,6 +852,16 @@ async function importFile(file) {
     st.versions.forEach(v => Object.values(v.plans).forEach(pl => st.classes.forEach(c => { if (!pl.groups.some(g => g.id === c.id)) pl.groups.push({ id: c.id, name: c.name }); })));
     ensureVersions(st);
     st.versions.forEach(v => { st.plans = v.plans; ensureGenders(st); }); ensureVersions(st);
+    const chg = find(/선생님\s*변경/);
+    if (chg) {
+      const tBy = n => (st.teachers.find(t => t.name === n) || {}).id || '';
+      readSheet(chg, /^원래\s*선생님$/).forEach(o => {
+        const v = st.versions.find(x => x.name === (cellText(pickCol(o, '버전')) || 'Ver.1')); if (!v) return;
+        const day = toISODate(pickCol(o, '날짜')); const g = (v.plans[BASE] || { groups: [] }).groups.find(x => x.name === cellText(pickCol(o, '반')));
+        if (!day || !g) return;
+        v.changes.push({ id: nid('k'), day, group: g.id, from: tBy(cellText(pickCol(o, '원래선생님'))), to: tBy(cellText(pickCol(o, '바뀐선생님'))) });
+      });
+    }
   }
   ensureGenders(st);
   return { st, issues, hasOrg: hadOrg || st.info.tfList.length > 0 || st.info.teams.length > 0 };
@@ -863,7 +893,7 @@ async function buildData() {
 
   const all = wb.addWorksheet('배치(전체)'); styleSheet(all, [['버전', 8], ['날짜', 12], ['일차', 16], ['반', 14], ['구분', 7], ['이름', 14], ['성별', 7], ['역할', 10], ['원래 학년반', 12]]);
   const keepPlans = S.plans;
-  S.versions.forEach(v => { S.plans = v.plans; ds.forEach(d => {
+  S.versions.forEach(v => { S.plans = v.plans; [BASE_DAY].forEach(d => {
     const L = layout(d.key);
     const sh = wb.addWorksheet(`${v.name} ${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 31));
     const cols = L.groups.slice();
@@ -874,9 +904,11 @@ async function buildData() {
     const max = Math.max(0, ...cols.map(x => x.students.length));
     for (let i = 0; i < max; i++) sh.addRow(cols.map(x => { const p = x.students[i]; return p ? p.name + (x.g.id && p.cls !== x.g.id ? ` (${clsName(p.cls)})` : '') : ''; }));
     sh.addRow([]); sh.addRow(cols.map(x => `학생 ${x.students.length}명`)).font = EX_FONT;
-    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.addRow([v.name, d.key === 'all' ? '전체 일정' : d.key, `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
+    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.addRow([v.name, '전체', `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
   }); });
   S.plans = keepPlans;
+  const ch = wb.addWorksheet('선생님 변경'); styleSheet(ch, [['버전', 8], ['날짜', 12], ['일차', 16], ['반', 18], ['원래 선생님', 14], ['바뀐 선생님', 14], ['메모', 18]]);
+  changeRows().forEach(r => ch.addRow(r));
   return wb.xlsx.writeBuffer();
 }
 
@@ -916,7 +948,7 @@ function sheetData() {
   out['조직'] = [ORG_COLS.map(x => x[0]), ...orgRows()];
   const all = [['버전', '날짜', '일차', '반', '구분', '이름', '성별', '역할', '원래 학년반']];
   const keep = S.plans;
-  S.versions.forEach(v => { S.plans = v.plans; ds.forEach(d => {
+  S.versions.forEach(v => { S.plans = v.plans; [BASE_DAY].forEach(d => {
     const L = layout(d.key); const cols = L.groups.slice();
     if (L.tray.teachers.length || L.tray.students.length) cols.push({ g: { id: '', name: '대기석' }, teachers: L.tray.teachers, students: L.tray.students });
     const grid = [cols.map(x => x.g.name + (x.g.gender && !x.g.name.includes(x.g.gender) ? ` (${x.g.gender})` : '')), cols.map(x => x.teachers.map(p => p.name + (p.role === '반사' ? '' : `(${p.role})`)).join(', ') || '선생님 없음')];
@@ -924,10 +956,11 @@ function sheetData() {
     for (let i = 0; i < max; i++) grid.push(cols.map(x => { const p = x.students[i]; return p ? p.name + (x.g.id && p.cls !== x.g.id ? ` (${clsName(p.cls)})` : '') : ''; }));
     grid.push(cols.map(() => ''), cols.map(x => `학생 ${x.students.length}명`));
     out[`${v.name} ${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 90)] = grid;
-    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.push([v.name, d.key === 'all' ? '전체 일정' : d.key, `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
+    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.push([v.name, '전체', `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
   }); });
   S.plans = keep;
   out['반배치(전체)'] = all;
+  out['선생님 변경'] = [['버전', '날짜', '일차', '반', '원래 선생님', '바뀐 선생님', '메모'], ...changeRows()];
   return out;
 }
 let syncT = null;
@@ -1085,13 +1118,13 @@ function layout(day) {
 }
 
 /* ================= render: shell ================= */
-function setSub() { const ds = dates(); const info = S.meta.start ? `${S.meta.start.replace(/-/g, '.')} – ${(S.meta.end || S.meta.start).replace(/-/g, '.')} · ${ds.length}일 · 교사 ${S.teachers.length}명 · 학생 ${S.students.length}명` : '템플릿에 명단을 채워 올리면, 참석을 체크하고 날짜별로 반을 짤 수 있어요.'; $('#appSub').textContent = (S.meta.title ? S.meta.title + ' · ' : '') + info; }
+function setSub() { const ds = dates(); const info = S.meta.start ? `${S.meta.start.replace(/-/g, '.')} – ${(S.meta.end || S.meta.start).replace(/-/g, '.')} · ${ds.length}일 · 교사 ${S.teachers.length}명 · 학생 ${S.students.length}명` : '템플릿에 명단을 채워 올리면, 참석을 체크하고 반을 짤 수 있어요.'; $('#appSub').textContent = (S.meta.title ? S.meta.title + ' · ' : '') + info; }
 function render() {
   $('#appTitle').textContent = APP_NAME;
   const ds = dates();
   setSub();
   $('#sampleBar').hidden = !S.sample;
-  const meta = { roster: S.teachers.length + S.students.length ? `${S.teachers.length + S.students.length}명` : '', board: ds.length > 1 ? `${ds.length}일` : '' };
+  const meta = { roster: S.teachers.length + S.students.length ? `${S.teachers.length + S.students.length}명` : '', board: S.versions.length > 1 ? `버전 ${S.versions.length}개` : '' };
   $('#steps').innerHTML = STEPS.map(([k, l], i) => `<button class="tab${S.step === k ? ' on' : ''}" type="button" data-step="${k}" aria-current="${S.step === k ? 'page' : 'false'}"><span class="n">${i + 1}</span>${l}${meta[k] ? `<span class="meta">${meta[k]}</span>` : ''}</button>`).join('');
   document.body.classList.toggle('picking', !!sel && (S.step === 'board' || S.step === 'teams'));
   ({ roster: renderRoster, info: renderInfo, attendance: renderAtt, teams: renderTeams, board: renderBoard })[S.step]();
@@ -1330,21 +1363,17 @@ function stone(p, isT, here, off, demo) {
   return `<span class="pc ${isT ? 't ' : ''}${gCode(p.gender)}${off ? ' off' : ''}${demo ? ' static' : ''}${sel === p.id ? ' sel' : ''}" ${attrs}${tip}><span class="st">${esc(p.name.slice(0, 1))}</span><span class="nm">${esc(p.name)}</span>${role}${moved ? `<span class="org">${esc(clsName(p.cls))}</span>` : ''}${off ? '<span class="rl">불참</span>' : ''}</span>`;
 }
 function renderBoard() {
-  const ds = dates();
-  if (!S.day || !ds.some(d => d.key === S.day)) S.day = ds[0].key;
-  const day = S.day; const L = layout(day);
+  S.day = BASE; const day = BASE; const L = layout(day);
   const noT = L.groups.filter(x => !x.teachers.length && x.students.length);
   const tT = L.groups.reduce((a, x) => a + x.teachers.length, 0) + L.tray.teachers.length;
   const tS = L.groups.reduce((a, x) => a + x.students.length, 0) + L.tray.students.length;
-  const idx = ds.findIndex(d => d.key === day);
   $('#view').innerHTML = `
   <div class="stack" style="gap:12px">
     <div class="verbar"><span class="verlab">배치 버전</span>${S.versions.map(v => `<button class="verchip${v.id === S.ver ? ' on' : ''}" type="button" data-ver="${v.id}" aria-pressed="${v.id === S.ver}">${esc(v.name)}</button>`).join('')}<button class="btn small" type="button" data-act="addVer">+ 새 버전</button><span class="spacer"></span>${S.versions.length > 1 ? (verDel ? `<span class="hint">${esc(curVer().name)}을(를) 지울까요?</span><button class="btn small danger" type="button" data-act="delVerYes">지우기</button><button class="btn small ghost" type="button" data-act="delVerNo">취소</button>` : `<button class="btn small ghost danger" type="button" data-act="delVer">${esc(curVer().name)} 삭제</button>`) : ''}</div>
-    ${ds.length > 1 ? `<div class="daytabs" role="tablist">${ds.map(d => { const l = layout(d.key); const bad = l.groups.filter(x => !x.teachers.length && x.students.length).length; return `<button class="daytab${d.key === day ? ' on' : ''}" role="tab" aria-selected="${d.key === day}" type="button" data-dayt="${d.key}"><b>${d.label} · ${d.short}</b><span class="${bad ? 'bad' : ''}">${bad ? `선생님 없는 반 ${bad}개` : '반마다 선생님 있음'}</span></button>`; }).join('')}</div>` : ''}
+    ${changesPanel()}
     <div class="boardbar">
-      <div class="kpis"><div><b>${L.groups.length}</b><span>개 반</span></div><div><b>${tT}</b><span>교사 참석</span></div><div><b>${tS}</b><span>학생 참석</span></div>${noT.length ? `<div class="bad"><b>${noT.length}</b><span>선생님 없는 반</span></div>` : ''}</div>
+      <div class="kpis"><div><b>${L.groups.length}</b><span>개 반</span></div><div><b>${tT}</b><span>교사</span></div><div><b>${tS}</b><span>학생 (하루라도 참석)</span></div>${noT.length ? `<div class="bad"><b>${noT.length}</b><span>선생님 없는 반</span></div>` : ''}</div>
       <span class="spacer"></span>
-      ${idx > 0 ? `<button class="btn small" type="button" data-act="copyPrev">${esc(ds[idx - 1].label)} 배치 가져오기</button>` : ''}
       ${noT.length ? '<button class="btn small" type="button" data-act="spread">선생님 없는 반 학생 나누기</button>' : ''}
       <button class="btn small" type="button" data-act="addGroup" data-g="남">+ 남학생반</button>
       <button class="btn small" type="button" data-act="addGroup" data-g="여">+ 여학생반</button>
@@ -1366,16 +1395,63 @@ function renderBoard() {
   </div>`;
 }
 // 반 카드: 위에 반 이름·인원, 가운데 선생님 프로필, 아래 학생 카드 목록
+// 날짜별 선생님 변경: 반에 배치된 선생님이 그날 불참하면 자동으로 줄이 생기고, 대신 들어갈 선생님을 고른다
+function dayList() { return dates().filter(d => d.key !== 'all'); }
+function teacherChanges(v) {
+  v = v || curVer(); const keep = S.plans; S.plans = v.plans;
+  const L = layout(BASE); S.plans = keep;
+  const rows = [];
+  dayList().forEach(d => {
+    L.groups.forEach(x => {
+      x.teachers.forEach(t => { if (!attends(t.id, d.key)) { const c = v.changes.find(c => c.day === d.key && c.group === x.g.id && c.from === t.id); rows.push({ d, g: x.g, from: t.id, to: c ? c.to : '', auto: true, id: c ? c.id : '' }); } });
+      v.changes.filter(c => c.day === d.key && c.group === x.g.id && !rows.some(r => r.id === c.id) && !(c.from && x.teachers.some(t => t.id === c.from && !attends(t.id, d.key)))).forEach(c => rows.push({ d, g: x.g, from: c.from, to: c.to, auto: false, id: c.id }));
+    });
+  });
+  return rows;
+}
+function changeRows() {
+  const out = [];
+  S.versions.forEach(v => teacherChanges(v).forEach(r => out.push([v.name, r.d.key, `${r.d.label} ${r.d.short}`, r.g.name, tName(r.from) || '(추가)', tName(r.to) || '미정', r.auto ? '원래 선생님 불참' : ''])));
+  return out;
+}
+function setChange(day, group, from, to, id) {
+  const v = curVer(); let c = id ? v.changes.find(x => x.id === id) : v.changes.find(x => x.day === day && x.group === group && x.from === from);
+  if (!c) { c = { id: nid('k'), day, group, from, to: '' }; v.changes.push(c); }
+  c.to = to; c.day = day; c.group = group; c.from = from;
+}
+function teacherOptions(day, selected) {
+  const busy = new Map(); const L = layout(BASE);
+  L.groups.forEach(x => x.teachers.forEach(t => busy.set(t.id, x.g.name)));
+  return `<option value="">미정</option>` + sortedTeachers().filter(t => attends(t.id, day)).map(t => `<option value="${t.id}"${t.id === selected ? ' selected' : ''}>${esc(t.name)}${busy.has(t.id) ? ` · ${esc(busy.get(t.id))}` : ` · ${esc(t.role)}`}</option>`).join('');
+}
+function changesPanel() {
+  const days = dayList(); if (days.length < 2) return '';
+  const rows = teacherChanges();
+  const open = rows.filter(r => !r.to).length;
+  const L = layout(BASE);
+  return `<section class="chgpanel">
+    <div class="row"><h3>일차별 선생님 변경</h3><span class="hint">${rows.length ? `${rows.length}건${open ? ` · <b class="bad">대신할 선생님 미정 ${open}건</b>` : ''}` : '모든 날 같은 구성이에요. 반에 배치된 선생님이 부분참석이면 여기에 자동으로 나와요.'}</span><span class="spacer"></span><button class="btn small" type="button" data-act="addChange">+ 변경 추가</button></div>
+    ${rows.length ? `<div class="tbl-wrap"><table class="chgtbl"><thead><tr><th>날짜</th><th>반</th><th>원래 선생님</th><th></th><th>바뀐 선생님</th><th></th></tr></thead><tbody>${rows.map(r => `<tr class="${r.to ? '' : 'pending'}">
+      <td>${r.auto ? `<b>${esc(r.d.short)}</b>` : `<select class="inp sm" data-chg="day" data-cid="${r.id}" aria-label="날짜">${days.map(d => `<option value="${d.key}"${d.key === r.d.key ? ' selected' : ''}>${esc(d.short)}</option>`).join('')}</select>`}</td>
+      <td>${r.auto ? esc(r.g.name) : `<select class="inp sm" data-chg="group" data-cid="${r.id}" aria-label="반">${L.groups.map(x => `<option value="${x.g.id}"${x.g.id === r.g.id ? ' selected' : ''}>${esc(x.g.name)}</option>`).join('')}</select>`}</td>
+      <td>${r.auto ? `${esc(tName(r.from))} <span class="chip warn">불참</span>` : `<select class="inp sm" data-chg="from" data-cid="${r.id}" aria-label="원래 선생님"><option value="">(새로 추가)</option>${(L.groups.find(x => x.g.id === r.g.id) || { teachers: [] }).teachers.map(t => `<option value="${t.id}"${t.id === r.from ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`}</td>
+      <td class="arrow">→</td>
+      <td><select class="inp sm" data-chg="to" data-day="${r.d.key}" data-group="${r.g.id}" data-from="${r.from}" data-cid="${r.id}" aria-label="바뀐 선생님">${teacherOptions(r.d.key, r.to)}</select></td>
+      <td>${r.auto ? '' : `<button class="btn small ghost danger" type="button" data-delchg="${r.id}">지우기</button>`}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  </section>`;
+}
 function personCard(p, isT, here, off, n) {
   const moved = here && p.cls && here !== p.cls && (!isT || CLASS_ROLES.has(p.role));
   const attrs = off ? 'aria-disabled="true"' : `data-pid="${p.id}" tabindex="0" role="button"`;
   const tip = ` title="${esc(p.name)}${p.cls ? ' · 원래 ' + esc(clsName(p.cls)) : ''}${isT ? ' · ' + esc(p.role) : ''}${off ? ' · 이날 불참' : ''}"`;
   const cls = `pc ${isT ? 't tcard' : 'scard'} ${gCode(p.gender)}${off ? ' off' : ''}${sel === p.id ? ' sel' : ''}`;
   if (isT) {
-    const sub = [p.role === '반사' ? '반사' : p.role, moved ? `원래 ${clsName(p.cls)}` : '', off ? '이날 불참' : ''].filter(Boolean).join(' · ');
+    const miss = !off && dayList().length > 1 ? dayList().filter(d => !attends(p.id, d.key)).map(d => d.short.replace(/\s*\(.\)/, '')) : [];
+    const sub = [p.role === '반사' ? '반사' : p.role, moved ? `원래 ${clsName(p.cls)}` : '', off ? '수련회 불참' : '', miss.length ? `${miss.join('·')} 불참` : ''].filter(Boolean).join(' · ');
     return `<div class="${cls}" ${attrs}${tip}><span class="av">${esc(p.name.slice(0, 1))}</span><span class="who2"><b class="nm">${esc(p.name)}</b><small>${esc(sub)}</small></span></div>`;
   }
-  const tags = [p.praise ? '<i class="tg">찬양</i>' : '', moved ? `<i class="tg mv">${esc(clsName(p.cls))}</i>` : ''].join('');
+  const part = attOf(p.id).s === 'part' ? dayList().filter(d => attends(p.id, d.key)).map(d => d.short.replace(/\s*\(.\)/, '')) : [];
+  const tags = [part.length ? `<i class="tg pt" title="부분참석">${esc(part.join('·'))}</i>` : '', p.praise ? '<i class="tg">찬양</i>' : '', moved ? `<i class="tg mv">${esc(clsName(p.cls))}</i>` : ''].join('');
   return `<div class="${cls}" ${attrs}${tip}><span class="no">${n}</span><span class="av">${esc(p.name.slice(0, 1))}</span><span class="nm">${esc(p.name)}</span>${tags}</div>`;
 }
 function tile(x) {
@@ -1389,6 +1465,7 @@ function tile(x) {
       <div class="cardmeta">${gl ? `<span class="badge ${gCode(x.g.gender)}">${gl}</span>` : ''}<span class="big"><b>${x.students.length}</b>명</span><span class="mute">선생님 ${x.teachers.length}</span>${m && f ? '<span class="flag soft">남녀 섞임</span>' : ''}${noT ? '<span class="flag">선생님 없음</span>' : ''}</div>
     </header>
     <div class="tslot cards"><span class="slotlab">선생님</span>${x.teachers.map(p => personCard(p, true, x.g.id, false)).join('')}${x.offTeachers.map(p => personCard(p, true, x.g.id, true)).join('')}${!x.teachers.length && !x.offTeachers.length ? '<span class="empty">선생님을 끌어 놓으세요</span>' : ''}</div>
+    ${(() => { const rs = teacherChanges().filter(r => r.g.id === x.g.id); return rs.length ? `<div class="cardchg">${rs.map(r => `<div class="${r.to ? '' : 'pending'}"><b>${esc(r.d.short.replace(/\s*\(.\)/, ''))}</b> ${esc(tName(r.from) || '추가')} → ${r.to ? esc(tName(r.to)) : '<span class="bad">미정</span>'}</div>`).join('')}</div>` : ''; })()}
     <div class="sslot cards"><span class="slotlab">학생 ${x.students.length}명</span>${x.students.map((p, i) => personCard(p, false, x.g.id, false, i + 1)).join('') || '<span class="empty">학생을 끌어 놓으세요</span>'}</div>
     ${x.offStudents.length ? `<div class="absent">이날 불참 ${x.offStudents.length}명 · ${x.offStudents.map(p => esc(p.name)).join(', ')}</div>` : ''}
   </section>`;
@@ -1475,8 +1552,9 @@ function init() {
       else if (a === 'orgApply') { const txt = ($('#orgPaste') || {}).value || ''; const o = parseOrg(txt); if (!o.tf.length && !o.teams.length) { toast('조직도를 읽지 못했어요. <TF팀>, "1. 팀이름", "직책 : 이름" 모양인지 확인해 주세요.'); return; } S.info.tfList = o.tf; S.info.teams = o.teams; save(); render(); const miss = [...o.tf.map(r => r.who), ...o.teams.flatMap(t => [...t.slots.map(x => x.who), ...t.members])].filter(w => w && w.startsWith('n:')).length; toast(`TF ${o.tf.length}명, 팀 ${o.teams.length}개를 넣었어요.${miss ? ` 명단에 없는 이름 ${miss}건은 노랑으로 표시돼요.` : ''}`); }
       else if (a === 'addTeam') { const tm = { id: nid('g'), name: `새 팀 ${S.info.teams.length + 1}`, slots: [{ id: nid('s'), title: '팀장', who: '', note: '' }], members: [] }; S.info.teams.push(tm); save(); render(); const el = $('#tmn-' + tm.id) || $('#itn-' + tm.id); if (el) { el.focus(); el.select(); } }
       else if (a === 'attReset') { S.att = JSON.parse(JSON.stringify(S.attX || {})); save(); render(); toast('참석을 엑셀 값으로 되돌렸어요.'); }
+      else if (a === 'addChange') { const d = dayList()[0]; const g = layout(BASE).groups[0]; if (!d || !g) return; curVer().changes.push({ id: nid('k'), day: d.key, group: g.g.id, from: '', to: '' }); save(); render(); }
       else if (a === 'copyPrev') { const ds = dates(); const i = ds.findIndex(d => d.key === S.day); if (i > 0) { S.plans[S.day] = JSON.parse(JSON.stringify(plan(ds[i - 1].key))); save(); render(); toast(`${ds[i - 1].label} 배치를 가져왔어요. 이날 불참한 사람은 빠져요.`); } }
-      else if (a === 'addVer') { const n = Math.max(0, ...S.versions.map(v => parseInt(String(v.name).replace(/\D/g, ''), 10) || 0)) + 1; const v = { id: nid('v'), name: `Ver.${n}`, plans: JSON.parse(JSON.stringify(S.plans)) }; const from = curVer().name; S.versions.push(v); S.ver = v.id; S.plans = v.plans; verDel = false; save(); render(); toast(`${from}을(를) 복사해 ${v.name}을(를) 만들었어요. 이제 ${v.name}에서 옮기면 ${from}은(는) 그대로 남아요.`); }
+      else if (a === 'addVer') { const n = Math.max(0, ...S.versions.map(v => parseInt(String(v.name).replace(/\D/g, ''), 10) || 0)) + 1; const v = { id: nid('v'), name: `Ver.${n}`, plans: JSON.parse(JSON.stringify(S.plans)), changes: JSON.parse(JSON.stringify(curVer().changes || [])) }; const from = curVer().name; S.versions.push(v); S.ver = v.id; S.plans = v.plans; verDel = false; save(); render(); toast(`${from}을(를) 복사해 ${v.name}을(를) 만들었어요. 이제 ${v.name}에서 옮기면 ${from}은(는) 그대로 남아요.`); }
       else if (a === 'delVer') { verDel = true; render(); }
       else if (a === 'delVerNo') { verDel = false; render(); }
       else if (a === 'delVerYes') { const gone = curVer().name; S.versions = S.versions.filter(v => v.id !== S.ver); S.ver = S.versions[0].id; S.plans = S.versions[0].plans; verDel = false; save(); render(); toast(`${gone}을(를) 지웠어요.`); }
@@ -1485,6 +1563,7 @@ function init() {
       else if (a === 'spread') spread();
       return;
     }
+    const dch = t.closest('[data-delchg]'); if (dch) { const v = curVer(); v.changes = v.changes.filter(c => c.id !== dch.dataset.delchg); save(); render(); return; }
     const dtf = t.closest('[data-deltf]'); if (dtf) { S.info.tfList = S.info.tfList.filter(r => r.id !== dtf.dataset.deltf); save(); render(); return; }
     const ads = t.closest('[data-addslot]'); if (ads) { const tm = S.info.teams.find(x => x.id === ads.dataset.addslot); if (tm) { const x = { id: nid('s'), title: '', who: '', note: '' }; tm.slots.push(x); save(); render(); const el = $('#pt-' + x.id); if (el) el.focus(); } return; }
     const dls = t.closest('[data-delslot]'); if (dls) { const [tid, sid] = dls.dataset.delslot.split(':'); const tm = S.info.teams.find(x => x.id === tid); if (tm) { tm.slots = tm.slots.filter(x => x.id !== sid); save(); render(); } return; }
@@ -1520,6 +1599,12 @@ function init() {
   });
   document.addEventListener('change', e => {
     const t = e.target;
+    if (t.dataset.chg) {
+      const f = t.dataset.chg;
+      if (f === 'to') setChange(t.dataset.day, t.dataset.group, t.dataset.from, t.value, t.dataset.cid);
+      else { const c = curVer().changes.find(x => x.id === t.dataset.cid); if (c) c[f] = t.value; }
+      save(); render(); return;
+    }
     if (t.id === 'syncAuto') { SY.auto = t.checked; saveSync(); if (SY.auto) scheduleSync(); return; }
     if (t.id === 'syncSheet') { renderSyncPanel(); return; }
     if (t.id === 'mStart' || t.id === 'mEnd') { if (t.value && t.value < '2026-01-01') { toast('2026년부터 고를 수 있어요.'); render(); return; } S.meta[t.id === 'mStart' ? 'start' : 'end'] = t.value; if (t.id === 'mStart' && (!S.meta.end || S.meta.end < t.value)) S.meta.end = t.value; save(); render(); return; }
