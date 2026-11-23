@@ -269,6 +269,16 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
 .pc.static { cursor: default; }
 .pc.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pc.lift { opacity: .3; }
+.syncdot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: inline-block; }
+.syncdot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.syncdot.err { background: var(--bad); }
+.syncdot.busy { background: var(--warn); }
+#syncPanel ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+#syncPanel pre { margin: 0; max-height: 220px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 11.5px; line-height: 1.45; white-space: pre; }
+.syncgrid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 640px) { .syncgrid { grid-template-columns: minmax(0, 1fr); } }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.switch input { accent-color: var(--accent); width: 16px; height: 16px; }
 .dragghost { position: fixed; z-index: 60; pointer-events: none; box-shadow: 0 10px 24px rgba(0,0,0,.25); transform: rotate(-3deg) scale(1.05); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); align-items: center; }
@@ -291,12 +301,14 @@ body.picking .tslot[data-drop], body.picking .sslot[data-drop] { border-style: d
       <p class="sub" id="appSub"></p>
     </div>
     <div class="row">
+      <button class="btn" id="btnSync" type="button" aria-expanded="false"><i class="syncdot" id="syncDot"></i><span id="syncLabel">구글 시트 연동</span></button>
       <button class="btn" id="btnTemplate" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12v2h10v-2"/></svg>템플릿 다운로드</button>
       <button class="btn primary" id="btnData" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12v2h10v-2"/></svg>데이터 다운로드</button>
     </div>
   </header>
   <div id="sampleBar" class="notice ok" hidden>지금 보이는 명단은 <b>예시</b>입니다. 템플릿을 내려받아 실제 명단을 채운 뒤 올리면 바뀝니다.</div>
   <div id="confirmBar" class="confirm" hidden></div>
+  <section class="panel" id="syncPanel" hidden></section>
   <nav class="steps" id="steps" aria-label="단계"></nav>
   <main id="view"></main>
 </div>
@@ -428,7 +440,7 @@ function ensureVersions(st) {
 }
 const curVer = () => S.versions.find(v => v.id === S.ver);
 function flush() { clearTimeout(saveT); saveT = null; try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { plans: undefined }))); } catch (e) {} }
-function save() { clearTimeout(saveT); saveT = setTimeout(flush, 200); }
+function save() { clearTimeout(saveT); saveT = setTimeout(flush, 200); if (typeof scheduleSync === 'function') scheduleSync(); }
 window.addEventListener('pagehide', () => { if (saveT) flush(); });
 function load() {
   try { const raw = localStorage.getItem(STORE); if (!raw) return false; const d = JSON.parse(raw); if (!d || d.v !== 2) return false; S = Object.assign(blank(), d); ensureVersions(S); S.info = Object.assign(blank().info, d.info || {}); S.teachers.forEach(t => { if (t.role === '스탭') t.role = '내부스탭'; });
@@ -849,6 +861,157 @@ async function saveFile(name, buf) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
+/* ================= Google Sheets live sync ================= */
+// 툴 → 구글 시트 한 방향. 바뀔 때마다 몇 초 뒤 전체 내용을 Apps Script 웹 앱으로 보낸다.
+const SYNC_STORE = 'retreat-sync-v1';
+let SY = { url: '', key: '', sheetUrl: '', auto: true, last: '', status: '' };
+try { Object.assign(SY, JSON.parse(localStorage.getItem(SYNC_STORE) || '{}')); } catch (e) {}
+if (!SY.key) SY.key = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+const saveSync = () => { try { localStorage.setItem(SYNC_STORE, JSON.stringify(SY)); } catch (e) {} };
+saveSync();
+const inArtifact = () => !!(window.claude && typeof window.claude.use === 'function');
+function sheetData() {
+  const ds = dates();
+  const attText = id => { const a = attOf(id); return a.s === 'out' ? '불참' : a.s === 'part' ? '부분참석' : '참석'; };
+  const attDays = id => { const a = attOf(id); return a.s === 'part' ? (a.days || []).slice().sort().join(', ') : ''; };
+  const c = counts(); const out = {};
+  const sum = [['항목', '내용'], ['수련회 이름', S.meta.title || ''], ['기간', `${S.meta.start} ~ ${S.meta.end}`], ['마지막 저장', new Date().toLocaleString('ko-KR')], ['', ''], ['인원', '']];
+  COUNT_ITEMS.forEach(([k, l]) => sum.push([l, c[k].v]));
+  sum.push(['', ''], ['TF', '']); S.info.tfList.forEach(r => sum.push([r.title, whoName(r.who) + (r.note ? ` (${r.note})` : '')]));
+  sum.push(['', ''], ['팀', '']); S.info.teams.forEach(tm => sum.push([tm.name, [...tm.slots.map(x => `${x.title} ${whoName(x.who) || '-'}${x.note ? `(${x.note})` : ''}`), `팀원 ${tm.members.map(whoName).join(', ') || '-'}`].join(' / ')]));
+  out['요약'] = sum;
+  out['교사'] = [T_COLS.map(x => x[0]), ...sortedTeachers().map(p => [p.name, p.gender, p.role, clsName(p.cls), p.team, p.praise ? 'O' : '', tfLabel(tfCatOf(p.id)), attText(p.id), attDays(p.id), p.note || ''])];
+  out['학생'] = [S_COLS.map(x => x[0]), ...sortedStudents().map(p => [clsName(p.cls), p.name, p.gender, p.praise ? 'O' : '', attText(p.id), attDays(p.id), p.note || ''])];
+  out['조직'] = [ORG_COLS.map(x => x[0]), ...orgRows()];
+  const all = [['버전', '날짜', '일차', '반', '구분', '이름', '성별', '역할', '원래 학년반']];
+  const keep = S.plans;
+  S.versions.forEach(v => { S.plans = v.plans; ds.forEach(d => {
+    const L = layout(d.key); const cols = L.groups.slice();
+    if (L.tray.teachers.length || L.tray.students.length) cols.push({ g: { id: '', name: '대기석' }, teachers: L.tray.teachers, students: L.tray.students });
+    const grid = [cols.map(x => x.g.name + (x.g.gender && !x.g.name.includes(x.g.gender) ? ` (${x.g.gender})` : '')), cols.map(x => x.teachers.map(p => p.name + (p.role === '반사' ? '' : `(${p.role})`)).join(', ') || '선생님 없음')];
+    const max = Math.max(0, ...cols.map(x => x.students.length));
+    for (let i = 0; i < max; i++) grid.push(cols.map(x => { const p = x.students[i]; return p ? p.name + (x.g.id && p.cls !== x.g.id ? ` (${clsName(p.cls)})` : '') : ''; }));
+    grid.push(cols.map(() => ''), cols.map(x => `학생 ${x.students.length}명`));
+    out[`${v.name} ${d.label} ${d.short}`.replace(/[\\/?*[\]:]/g, '.').trim().slice(0, 90)] = grid;
+    cols.forEach(x => { [...x.teachers.map(p => ['교사', p]), ...x.students.map(p => ['학생', p])].forEach(([k, p]) => all.push([v.name, d.key === 'all' ? '전체 일정' : d.key, `${d.label} ${d.short}`.trim(), x.g.name, k, p.name, p.gender, k === '교사' ? p.role : '', clsName(p.cls)])); });
+  }); });
+  S.plans = keep;
+  out['반배치(전체)'] = all;
+  return out;
+}
+let syncT = null;
+function scheduleSync() { if (!SY.url || !SY.auto) return; clearTimeout(syncT); setSyncState('busy', '보낼 준비 중…'); syncT = setTimeout(pushSync, 2500); }
+async function pushSync(manual) {
+  if (!SY.url) { if (manual) toast('먼저 Apps Script 웹 앱 주소를 넣어 주세요.'); return; }
+  setSyncState('busy', '구글 시트로 보내는 중…');
+  try {
+    await fetch(SY.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ key: SY.key, sheets: sheetData() }) });
+    SY.last = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); saveSync();
+    setSyncState('on', `구글 시트에 보냄 · ${SY.last}`);
+    if (manual) toast('구글 시트로 보냈어요.');
+  } catch (e) {
+    setSyncState('err', inArtifact() ? 'Claude 링크에서는 보낼 수 없어요' : '보내지 못했어요');
+    if (manual) toast(inArtifact() ? 'Claude Artifact 링크에서는 구글 시트로 보낼 수 없어요. 툴의 웹 주소에서 열어 주세요.' : '보내지 못했어요. 웹 앱 주소와 인터넷 연결을 확인해 주세요.');
+  }
+}
+function pingSync() {
+  if (!SY.url) { toast('먼저 웹 앱 주소를 넣어 주세요.'); return; }
+  const cb = '__gsPing' + Date.now();
+  const sc = document.createElement('script');
+  const done = (ok, msg) => { delete window[cb]; sc.remove(); clearTimeout(tm); setSyncState(ok ? 'on' : 'err', msg); toast(msg); };
+  const tm = setTimeout(() => done(false, '응답이 없어요. 주소와 배포 설정(액세스: 모든 사용자)을 확인해 주세요.'), 12000);
+  window[cb] = r => r && r.ok ? done(true, `연결됨 · 시트 "${r.sheet}"`) : done(false, '연동 키가 맞지 않아요. 아래 코드를 다시 붙여넣고 새 버전으로 배포해 주세요.');
+  sc.src = `${SY.url}${SY.url.includes('?') ? '&' : '?'}key=${encodeURIComponent(SY.key)}&callback=${cb}`;
+  sc.onerror = () => done(false, inArtifact() ? 'Claude 링크에서는 연결할 수 없어요. 툴의 웹 주소에서 열어 주세요.' : '연결하지 못했어요. 주소를 확인해 주세요.');
+  document.head.appendChild(sc);
+}
+function setSyncState(kind, text) {
+  SY.status = text;
+  const dot = $('#syncDot'); if (dot) dot.className = 'syncdot ' + (kind || '');
+  const lb = $('#syncLabel'); if (lb) lb.textContent = SY.url ? (kind === 'on' ? `시트 연동 · ${SY.last || '연결됨'}` : kind === 'err' ? '시트 연동 오류' : kind === 'busy' ? '시트로 보내는 중' : '구글 시트 연동') : '구글 시트 연동';
+  const st = $('#syncStatus'); if (st) st.textContent = text || '';
+}
+function appsScriptCode() {
+  return `// 분당우리교회 주일학교 수련회 반편성 Tool → 구글 시트 실시간 연동
+// 이 코드를 구글 시트의 [확장 프로그램] > [Apps Script]에 붙여넣고 웹 앱으로 배포하세요.
+const KEY = '${SY.key}';
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.key !== KEY) return json({ ok: false, error: 'key' });
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const names = Object.keys(data.sheets);
+    names.forEach(function (name) {
+      const rows = data.sheets[name] || [];
+      const sh = ss.getSheetByName(name) || ss.insertSheet(name);
+      sh.clearContents();
+      if (!rows.length) return;
+      const w = Math.max.apply(null, rows.map(function (r) { return r.length; }).concat([1]));
+      const vals = rows.map(function (r) {
+        const a = r.map(function (v) { v = v == null ? '' : v; return typeof v === 'string' && /^[=+@-]/.test(v) ? "'" + v : v; });
+        while (a.length < w) a.push('');
+        return a;
+      });
+      sh.getRange(1, 1, vals.length, w).setValues(vals);
+      sh.getRange(1, 1, 1, w).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    });
+    const props = PropertiesService.getScriptProperties();
+    const prev = JSON.parse(props.getProperty('managed') || '[]');
+    prev.filter(function (n) { return names.indexOf(n) < 0; }).forEach(function (n) {
+      const old = ss.getSheetByName(n);
+      if (old && ss.getSheets().length > 1) ss.deleteSheet(old);
+    });
+    props.setProperty('managed', JSON.stringify(names));
+    props.setProperty('updated', new Date().toISOString());
+    return json({ ok: true });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doGet(e) {
+  const p = e.parameter || {};
+  const res = { ok: p.key === KEY, sheet: SpreadsheetApp.getActiveSpreadsheet().getName(), updated: PropertiesService.getScriptProperties().getProperty('updated') };
+  const cb = String(p.callback || 'callback').replace(/[^A-Za-z0-9_$.]/g, '');
+  return ContentService.createTextOutput(cb + '(' + JSON.stringify(res) + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function json(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+`;
+}
+function renderSyncPanel() {
+  const P = $('#syncPanel');
+  P.innerHTML = `
+    <div class="row"><h2>구글 시트 실시간 연동</h2><span class="spacer"></span><button class="btn small ghost" type="button" data-act="syncClose">닫기</button></div>
+    ${inArtifact() ? '<div class="notice">지금은 Claude Artifact 링크에서 열려 있어서 구글 시트로 보낼 수 없어요. 아래 설정은 해 둘 수 있고, 실제 전송은 툴의 웹 주소에서 열었을 때 돼요.</div>' : ''}
+    <p class="hint">툴에서 바뀐 내용이 몇 초 뒤 구글 시트에 자동으로 올라가요. 툴 → 시트 한 방향이고, 시트에서 고친 내용은 툴로 돌아오지 않아요. 여러 사람이 각자 툴을 고치면 마지막에 보낸 사람 내용으로 시트가 바뀌니, 편집은 한 사람이 하고 나머지는 시트를 보는 걸 권해요.</p>
+    <ol>
+      <li>구글 드라이브에서 새 구글 시트를 하나 만들어요.</li>
+      <li>시트 메뉴 <b>확장 프로그램 → Apps Script</b>를 열고, 있던 코드를 지운 뒤 아래 코드를 그대로 붙여넣고 저장해요. <button class="btn small" type="button" data-act="syncCopy">코드 복사</button></li>
+      <li>오른쪽 위 <b>배포 → 새 배포</b> → 유형 <b>웹 앱</b>, 실행 계정 <b>나</b>, 액세스 권한 <b>모든 사용자</b>로 고르고 배포해요. 처음엔 구글 권한 허용 창이 떠요.</li>
+      <li>나온 <b>웹 앱 URL</b>(https://script.google.com/macros/s/…/exec)을 아래에 붙여넣고 <b>연결 확인</b>을 눌러요.</li>
+    </ol>
+    <pre id="syncCode">${esc(appsScriptCode())}</pre>
+    <div class="syncgrid">
+      <div class="fld"><label for="syncUrl">Apps Script 웹 앱 URL</label><input class="inp" id="syncUrl" value="${esc(SY.url)}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="fld"><label for="syncKey">연동 키 (코드 안의 KEY와 같아야 해요)</label><input class="inp" id="syncKey" value="${esc(SY.key)}"></div>
+    </div>
+    <div class="fld"><label for="syncSheet">구글 시트 주소 (선택 · 바로 열기 버튼용)</label><input class="inp" id="syncSheet" value="${esc(SY.sheetUrl)}" placeholder="https://docs.google.com/spreadsheets/d/…"></div>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="syncAuto" ${SY.auto ? 'checked' : ''}>바뀔 때마다 자동으로 보내기</label>
+      <span class="spacer"></span>
+      ${SY.sheetUrl ? `<a class="btn small" href="${esc(SY.sheetUrl)}" target="_blank" rel="noopener">시트 열기</a>` : ''}
+      <button class="btn small" type="button" data-act="syncPing">연결 확인</button>
+      <button class="btn small primary" type="button" data-act="syncNow">지금 보내기</button>
+    </div>
+    <p class="hint" id="syncStatus">${esc(SY.status || (SY.url ? '' : '아직 연결하지 않았어요.'))}</p>`;
+}
 const stamp = () => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
 
 /* ================= derived ================= */
@@ -1241,6 +1404,9 @@ function init() {
   window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (STEPS.some(s => s[0] === k) && k !== S.step) go(k); });
   $('#btnTemplate').onclick = () => doDownload('template');
   $('#btnData').onclick = () => doDownload('data');
+  $('#btnSync').onclick = () => { const P = $('#syncPanel'); P.hidden = !P.hidden; $('#btnSync').setAttribute('aria-expanded', String(!P.hidden)); if (!P.hidden) renderSyncPanel(); };
+  setSyncState(SY.url ? (SY.last ? 'on' : '') : '', SY.url ? (SY.last ? `마지막 전송 ${SY.last}` : '') : '');
+  if (SY.url && SY.auto) setTimeout(() => pushSync(false), 1500);
   $('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleFile(f); });
   $('#selCancel').onclick = () => setSel(null);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && sel) setSel(null); });
@@ -1254,6 +1420,11 @@ function init() {
     if (act) {
       const a = act.dataset.act;
       if (a === 'template') doDownload('template');
+
+      else if (a === 'syncClose') { $('#syncPanel').hidden = true; $('#btnSync').setAttribute('aria-expanded', 'false'); }
+      else if (a === 'syncPing') pingSync();
+      else if (a === 'syncNow') pushSync(true);
+      else if (a === 'syncCopy') { const txt = appsScriptCode(); navigator.clipboard.writeText(txt).then(() => toast('코드를 복사했어요.'), () => { const r = document.createRange(); r.selectNodeContents($('#syncCode')); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); toast('복사가 막혀 있어요. 선택된 코드를 Ctrl+C로 복사하세요.'); }); }
       else if (a === 'addTf') { const r = { id: nid('s'), title: '', who: '', note: '' }; S.info.tfList.push(r); save(); render(); const el = $('#tft-' + r.id); if (el) el.focus(); }
       else if (a === 'orgDefault') { applyDefaultOrg(); save(); render(); toast('기본 조직도(TF 4명, 팀 5개)로 되돌렸어요.'); }
       else if (a === 'orgApply') { const txt = ($('#orgPaste') || {}).value || ''; const o = parseOrg(txt); if (!o.tf.length && !o.teams.length) { toast('조직도를 읽지 못했어요. <TF팀>, "1. 팀이름", "직책 : 이름" 모양인지 확인해 주세요.'); return; } S.info.tfList = o.tf; S.info.teams = o.teams; save(); render(); const miss = [...o.tf.map(r => r.who), ...o.teams.flatMap(t => [...t.slots.map(x => x.who), ...t.members])].filter(w => w && w.startsWith('n:')).length; toast(`TF ${o.tf.length}명, 팀 ${o.teams.length}개를 넣었어요.${miss ? ` 명단에 없는 이름 ${miss}건은 노랑으로 표시돼요.` : ''}`); }
@@ -1291,6 +1462,9 @@ function init() {
   document.addEventListener('keydown', e => { const pc = e.target.closest && e.target.closest('.pc[data-pid]'); if (pc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pc.click(); } });
   document.addEventListener('input', e => {
     const t = e.target;
+    if (t.id === 'syncUrl') { SY.url = t.value.trim(); saveSync(); return; }
+    if (t.id === 'syncKey') { SY.key = t.value.trim(); saveSync(); const pre = $('#syncCode'); if (pre) pre.textContent = appsScriptCode(); return; }
+    if (t.id === 'syncSheet') { SY.sheetUrl = t.value.trim(); saveSync(); return; }
     if (t.id === 'mTitle') { S.meta.title = t.value; save(); setSub(); return; }
     if (t.dataset.ov) { if (t.value === '') delete S.info.ov[t.dataset.ov]; else S.info.ov[t.dataset.ov] = t.value; save(); return; }
     if (t.dataset.tft) { const r = S.info.tfList.find(x => x.id === t.dataset.tft); if (r) { r.title = t.value; save(); } return; }
@@ -1301,6 +1475,8 @@ function init() {
   });
   document.addEventListener('change', e => {
     const t = e.target;
+    if (t.id === 'syncAuto') { SY.auto = t.checked; saveSync(); if (SY.auto) scheduleSync(); return; }
+    if (t.id === 'syncSheet') { renderSyncPanel(); return; }
     if (t.id === 'mStart' || t.id === 'mEnd') { if (t.value && t.value < '2026-01-01') { toast('2026년부터 고를 수 있어요.'); render(); return; } S.meta[t.id === 'mStart' ? 'start' : 'end'] = t.value; if (t.id === 'mStart' && (!S.meta.end || S.meta.end < t.value)) S.meta.end = t.value; save(); render(); return; }
     if (t.dataset.ov || t.dataset.tfw) render();
   });
